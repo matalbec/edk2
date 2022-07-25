@@ -2098,6 +2098,7 @@ SdMmcWaitTrbEnv (
     // Check Trb execution result by reading Normal Interrupt Status register.
     //
     Status = SdMmcCheckTrbEnv (Private, Trb);
+    DEBUG ((DEBUG_INFO, "Check TRB env rdy %r\n", Status));
     if (Status != EFI_NOT_READY) {
       return Status;
     }

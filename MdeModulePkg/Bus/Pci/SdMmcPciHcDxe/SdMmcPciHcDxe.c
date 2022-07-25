@@ -1021,29 +1021,17 @@ SdMmcPassThruExecSyncTrb (
   )
 {
   EFI_STATUS  Status;
-  EFI_TPL     OldTpl;
-
-  //
-  // Wait async I/O list is empty before execute sync I/O operation.
-  //
-  while (TRUE) {
-    OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
-    if (IsListEmpty (&Private->Queue)) {
-      gBS->RestoreTPL (OldTpl);
-      break;
-    }
-
-    gBS->RestoreTPL (OldTpl);
-  }
 
   while (Trb->Retries) {
     Status = SdMmcWaitTrbEnv (Private, Trb);
     if (EFI_ERROR (Status)) {
+      DEBUG ((DEBUG_INFO, "Failed to wait\n"));
       return Status;
     }
 
     Status = SdMmcExecTrb (Private, Trb);
     if (EFI_ERROR (Status)) {
+      DEBUG ((DEBUG_INFO, "Failed to exec\n"));
       return Status;
     }
 
@@ -1051,6 +1039,7 @@ SdMmcPassThruExecSyncTrb (
     if (Status == EFI_CRC_ERROR) {
       Trb->Retries--;
     } else {
+      DEBUG ((DEBUG_INFO, "Failed to get result\n"));
       return Status;
     }
   }
@@ -1151,6 +1140,8 @@ SdMmcPassThruPassThru (
   }
 
   Status = SdMmcPassThruExecSyncTrb (Private, Trb);
+
+  DEBUG ((DEBUG_INFO, "Past validation\n"));
 
   SdMmcFreeTrb (Trb);
 

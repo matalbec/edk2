@@ -37,6 +37,14 @@
   DebugLib
   UnitTestLib
   PcdLib
+  DevicePathLib
+  UefiLib
+
+[Protocols]
+  gEdkiiSdMmcOverrideProtocolGuid
+  gEfiDevicePathProtocolGuid
+  gEfiPciIoProtocolGuid
+  gEfiSdMmcPassThruProtocolGuid
 
 [Pcd]
   gEfiMdeModulePkgTokenSpaceGuid.PcdSdMmcGenericTimeoutValue  ## CONSUMES
