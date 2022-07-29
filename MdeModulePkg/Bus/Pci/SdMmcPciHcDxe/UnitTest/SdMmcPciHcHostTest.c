@@ -47,11 +47,12 @@ struct _REGISTER_SPACE {
 };
 
 typedef struct _REGISTER_MAP  REGISTER_MAP;
+typedef struct _SIMPLE_REGISTER_SPACE SIMPLE_REGISTER_SPACE;
 
 typedef
 VOID
 (*REGISTER_POST_READ_CALLBACK) (
-  IN REGISTER_MAP  *Map,
+  IN SIMPLE_REGISTER_SPACE  *RegisterSpace,
   IN UINT64        Address,
   IN UINT32        Size,
   IN OUT UINT64    *Value,
@@ -61,7 +62,7 @@ VOID
 typedef
 VOID
 (*REGISTER_PRE_WRITE_CALLBACK) (
-  IN REGISTER_MAP  *Map,
+  IN SIMPLE_REGISTER_SPACE  *RegisterSpace,
   IN UINT64        Address,
   IN UINT32        Size,
   IN OUT UINT64    *Value,
@@ -73,35 +74,81 @@ struct _REGISTER_MAP {
   CHAR16*                      Name;
   UINT32                       SizeInBytes;
   UINT64                       Value;
+};
+
+GLOBAL_REMOVE_IF_UNREFERENCED  VOID  *MemoryBlock;
+
+GLOBAL_REMOVE_IF_UNREFERENCED  UINT32  TestBlock[128] = {
+  0xDEADBEEF,
+  0xDEADBEEF,
+  0xDEADBEEF,
+  0xDEADBEEF,
+  0xDEADBEEF,
+  0xDEADBEEF,
+  0xDEADBEEF
+};
+
+VOID
+SdMmcPreWrite (
+  IN SIMPLE_REGISTER_SPACE  *Map,
+  IN UINT64        Address,
+  IN UINT32        Size,
+  IN OUT UINT64    *Value,
+  IN VOID          *Context
+  )
+{
+  UINT32  Index;
+
+  for (Index = 0; Index < 14; Index++) {
+    if (Map[Index].Offset == SD_MMC_HC_SDMA_ADDR) {
+      DEBUG ((DEBUG_INFO, "SDMA address %X\n", Map[Index].Value));
+      if (Map[Index].Value == 0x20) {
+        DEBUG ((DEBUG_INFO, "Copying block\n"));
+        DEBUG ((DEBUG_INFO, "Copying to %X from %X size %d\n", MemoryBlock, TestBlock, sizeof (TestBlock)));
+        CopyMem (MemoryBlock, TestBlock, sizeof (TestBlock));
+      }
+    } else if (Map[Index].Offset == SD_MMC_HC_NOR_INT_STS) {
+      Map[Index].Value = 0x3;
+    }
+  }
+}
+
+struct _SIMPLE_REGISTER_SPACE {
+  REGISTER_SPACE  RegisterSpace;
   REGISTER_POST_READ_CALLBACK  PostRead;
   VOID                         *PostReadContext;
   REGISTER_PRE_WRITE_CALLBACK  PreWrite;
   VOID                         *PreWriteContext;
+  UINTN           MapSize;
+  REGISTER_MAP    *Map;
 };
 
 GLOBAL_REMOVE_IF_UNREFERENCED REGISTER_MAP gSdMemMap[] = {
-  {SD_MMC_HC_PRESENT_STATE, L"SD_MMC_HC_PRESENT_STATE", 0x4, 0x0, NULL, NULL, NULL, NULL},
-  {SD_MMC_HC_NOR_INT_STS, L"SD_MMC_HC_NOR_INT_STS", 0x4, 0x3, NULL, NULL, NULL, NULL},
-  {SD_MMC_HC_ERR_INT_STS, L"SD_MMC_HC_ERR_INT_STS", 0x4, 0x0, NULL, NULL, NULL, NULL},
-  {SD_MMC_HC_HOST_CTRL1, L"SD_MMC_HC_HOST_CTRL1", 0x4, 0x0, NULL, NULL, NULL, NULL},
-  {SD_MMC_HC_SDMA_ADDR, L"SD_MMC_HC_SDMA_ADDR", 0x4, 0x0, NULL, NULL, NULL, NULL},
-  {SD_MMC_HC_BLK_SIZE, L"SD_MMC_HC_BLK_SIZE", 0x4, 0x0, NULL, NULL, NULL, NULL},
-  {SD_MMC_HC_BLK_COUNT, L"SD_MMC_HC_BLK_COUNT", 0x4, 0x0, NULL, NULL, NULL, NULL},
-  {SD_MMC_HC_ARG1, L"SD_MMC_HC_ARG1", 0x4, 0x0, NULL, NULL, NULL, NULL},
-  {SD_MMC_HC_TRANS_MOD, L"SD_MMC_HC_TRANS_MOD", 0x4, 0x0, NULL, NULL, NULL, NULL},
-  {SD_MMC_HC_COMMAND, L"SD_MMC_HC_COMMAND", 0x4, 0x0, NULL, NULL, NULL, NULL},
-  {SD_MMC_HC_RESPONSE, L"SD_MMC_HC_RESPONSE", 0x4, 0x0, NULL, NULL, NULL, NULL},
-  {SD_MMC_HC_RESPONSE + 4, L"SD_MMC_HC_RESPONSE1", 0x4, 0x0, NULL, NULL, NULL, NULL},
-  {SD_MMC_HC_RESPONSE + 8, L"SD_MMC_HC_RESPONSE2", 0x4, 0x0, NULL, NULL, NULL, NULL},
-  {SD_MMC_HC_RESPONSE + 12, L"SD_MMC_HC_RESPONSE", 0x4, 0x0, NULL, NULL, NULL, NULL}
+  {SD_MMC_HC_PRESENT_STATE, L"SD_MMC_HC_PRESENT_STATE", 0x4, 0x0},
+  {SD_MMC_HC_NOR_INT_STS, L"SD_MMC_HC_NOR_INT_STS", 0x4, 0x0},
+  {SD_MMC_HC_ERR_INT_STS, L"SD_MMC_HC_ERR_INT_STS", 0x4, 0x0},
+  {SD_MMC_HC_HOST_CTRL1, L"SD_MMC_HC_HOST_CTRL1", 0x4, 0x0},
+  {SD_MMC_HC_SDMA_ADDR, L"SD_MMC_HC_SDMA_ADDR", 0x4, 0x0},
+  {SD_MMC_HC_BLK_SIZE, L"SD_MMC_HC_BLK_SIZE", 0x4, 0x0},
+  {SD_MMC_HC_BLK_COUNT, L"SD_MMC_HC_BLK_COUNT", 0x4, 0x0},
+  {SD_MMC_HC_ARG1, L"SD_MMC_HC_ARG1", 0x4, 0x0},
+  {SD_MMC_HC_TRANS_MOD, L"SD_MMC_HC_TRANS_MOD", 0x4, 0x0},
+  {SD_MMC_HC_COMMAND, L"SD_MMC_HC_COMMAND", 0x4, 0x0},
+  {SD_MMC_HC_RESPONSE, L"SD_MMC_HC_RESPONSE0", 0x4, 0x0},
+  {SD_MMC_HC_RESPONSE + 4, L"SD_MMC_HC_RESPONSE1", 0x4, 0x0},
+  {SD_MMC_HC_RESPONSE + 8, L"SD_MMC_HC_RESPONSE2", 0x4, 0x0},
+  {SD_MMC_HC_RESPONSE + 12, L"SD_MMC_HC_RESPONSE3", 0x4, 0x0}
 };
 
-typedef struct {
-  REGISTER_SPACE  RegisterSpace;
-  UINTN           MapSize;
-  REGISTER_MAP    *Map;
-} SIMPLE_REGISTER_SPACE;
-
+GLOBAL_REMOVE_IF_UNREFERENCED SIMPLE_REGISTER_SPACE gSdSimpleMem = {
+  {L"SD BAR", NULL, NULL},
+  NULL,
+  NULL,
+  SdMmcPreWrite,
+  NULL,
+  ARRAY_SIZE (gSdMemMap),
+  gSdMemMap
+};
 
 typedef struct {
   REGISTER_SPACE  *ConfigSpace;
@@ -171,12 +218,6 @@ SdControllerPciWrite (
   return EFI_SUCCESS;
 }
 
-REGISTER_SPACE  SdControllerPciSpace = {
-  L"Sd controller PCI config",
-  SdControllerPciRead,
-  SdControllerPciWrite
-};
-
 EFI_STATUS
 SdControllerMemRead (
   IN REGISTER_SPACE  *RegisterSpace,
@@ -188,25 +229,25 @@ SdControllerMemRead (
   UINT32  Index;
 
   for (Index = 0; Index < ARRAY_SIZE (gSdMemMap); Index++) {
-    if (gSdMemMap[Index].Offset == Address) {
-      DEBUG ((DEBUG_INFO, "Reading reg %s, Value = %X\n", gSdMemMap[Index].Name, gSdMemMap[Index].Value));
+    if (gSdSimpleMem.Map[Index].Offset == Address) {
+      DEBUG ((DEBUG_INFO, "Reading reg %s, Value = %X\n", gSdSimpleMem.Map[Index].Name, gSdSimpleMem.Map[Index].Value));
       switch (Size) {
         case 1:
-          *(UINT8*)Value = (UINT8)gSdMemMap[Index].Value;
+          *(UINT8*)Value = (UINT8)gSdSimpleMem.Map[Index].Value;
           break;
         case 2:
-          *(UINT16*)Value = (UINT16)gSdMemMap[Index].Value;
+          *(UINT16*)Value = (UINT16)gSdSimpleMem.Map[Index].Value;
           break;
         case 4:
-          *(UINT32*)Value = (UINT32)gSdMemMap[Index].Value;
+          *(UINT32*)Value = (UINT32)gSdSimpleMem.Map[Index].Value;
           break;
         case 8:
         default:
-          *Value = gSdMemMap[Index].Value;
+          *Value = gSdSimpleMem.Map[Index].Value;
           break;
       }
-      if (gSdMemMap[Index].PostRead != NULL) {
-        gSdMemMap[Index].PostRead(gSdMemMap, Address, Size, Value, gSdMemMap[Index].PostReadContext);
+      if (gSdSimpleMem.Map[Index].PostRead != NULL) {
+        gSdSimpleMem.PostRead(&gSdSimpleMem, Address, Size, Value, gSdSimpleMem.PostReadContext);
       }
       return EFI_SUCCESS;
     }
@@ -223,14 +264,17 @@ SdControllerMemWrite (
   )
 {
   UINT32  Index;
+  SIMPLE_REGISTER_SPACE  *SimpleRegisterSpace;
 
-  for (Index = 0; Index < ARRAY_SIZE (gSdMemMap); Index++) {
-    if (gSdMemMap[Index].Offset == Address) {
-      if (gSdMemMap[Index].PreWrite != NULL) {
-        gSdMemMap[Index].PreWrite(gSdMemMap, Address, Size, &Value, gSdMemMap[Index].PreWriteContext);
+  SimpleRegisterSpace = (SIMPLE_REGISTER_SPACE*) RegisterSpace;
+
+  for (Index = 0; Index < gSdSimpleMem.MapSize; Index++) {
+    if (gSdSimpleMem.Map[Index].Offset == Address) {
+      if (gSdSimpleMem.PreWrite != NULL) {
+        gSdSimpleMem.PreWrite(gSdSimpleMem, Address, Size, &Value, gSdSimpleMem.PreWriteContext);
       }
-      DEBUG ((DEBUG_INFO, "Writing reg %s with %X\n", gSdMemMap[Index].Name, Value));
-      gSdMemMap[Index].Value = Value;
+      DEBUG ((DEBUG_INFO, "Writing reg %s with %X\n", gSdSimpleMem.Map[Index].Name, Value));
+      gSdSimpleMem.Map[Index].Value = Value;
       return EFI_SUCCESS;
     }
   }
@@ -616,9 +660,63 @@ SdMmcPrivateDataBuildControllerReadyToTransfer (
 }
 
 EFI_STATUS
+SdMmcBuildControllerReadyForPioTransfer (
+  OUT SD_MMC_HC_PRIVATE_DATA  **Private
+  )
+{
+  MOCK_PCI_DEVICE  *MockPciDevice;
+  EFI_PCI_IO_PROTOCOL  *MockPciIo;
+
+  *Private = AllocateCopyPool (sizeof (SD_MMC_HC_PRIVATE_DATA), &gSdMmcPciHcTemplate);
+
+  MockPciDeviceInitialize (&SdControllerPciSpace, &MockPciDevice);
+
+  MockPciDeviceRegisterBar (MockPciDevice, &SdControllerMemSpace, 0);
+
+  CreatePciIoForMockPciDevice (MockPciDevice, &MockPciIo);
+
+  (*Private)->Slot[0].Enable = TRUE;
+  (*Private)->Slot[0].MediaPresent = TRUE;
+  (*Private)->Slot[0].Initialized = TRUE;
+  (*Private)->Slot[0].CardType = SdCardType;
+  (*Private)->Capability[0].Adma2 = FALSE;
+  (*Private)->Capability[0].Sdma = FALSE;
+  (*Private)->ControllerVersion[0] = SD_MMC_HC_CTRL_VER_300;
+  (*Private)->PciIo = MockPciIo;
+
+  return EFI_SUCCESS;
+}
+
+VOID
+SdMmcCreateSingleBlockTransferPacket (
+  IN VOID*  BlockBuffer,
+  IN UINT32  BlockSize,
+  OUT EFI_SD_MMC_PASS_THRU_COMMAND_PACKET  *Packet,
+  OUT EFI_SD_MMC_COMMAND_BLOCK             *CommandBlock,
+  OUT EFI_SD_MMC_STATUS_BLOCK              *StatusBlock
+  )
+{
+  ZeroMem (Packet, sizeof (EFI_SD_MMC_PASS_THRU_COMMAND_PACKET));
+  ZeroMem (CommandBlock, sizeof (EFI_SD_MMC_COMMAND_BLOCK));
+  ZeroMem (StatusBlock, sizeof (EFI_SD_MMC_STATUS_BLOCK));
+  Packet->Timeout = 1;
+  Packet->SdMmcCmdBlk = CommandBlock;
+  Packet->SdMmcStatusBlk = StatusBlock;
+  Packet->InDataBuffer = BlockBuffer;
+  Packet->OutDataBuffer = NULL;
+  Packet->InTransferLength = BlockSize;
+  Packet->OutTransferLength = 0;
+  Packet->TransactionStatus = EFI_SUCCESS;
+  CommandBlock->CommandIndex = SD_READ_SINGLE_BLOCK;
+  CommandBlock->CommandArgument = 0;
+  CommandBlock->CommandType = SdMmcCommandTypeAdtc;
+  CommandBlock->ResponseType = SdMmcResponseTypeR1;
+}
+
+UNIT_TEST_STATUS
 EFIAPI
-UefiTestMain (
-  VOID
+SdMmcSignleBlockReadShouldReturnDataBlockFromDevice (
+  IN UNIT_TEST_CONTEXT  Context
   )
 {
   SD_MMC_HC_PRIVATE_DATA  *Private;
@@ -627,27 +725,58 @@ UefiTestMain (
   EFI_SD_MMC_STATUS_BLOCK   StatusBlock;
   EFI_STATUS                Status;
 
-  SdMmcPrivateDataBuildControllerReadyToTransfer (&Private);
+  Private = (SD_MMC_HC_PRIVATE_DATA*) Context;
 
-
-  Packet.Timeout = 1;
-  Packet.SdMmcCmdBlk = &CommandBlock;
-  Packet.SdMmcStatusBlk = &StatusBlock;
-  Packet.InDataBuffer = AllocateZeroPool (512);
-  Packet.OutDataBuffer = NULL;
-  Packet.InTransferLength = 512;
-  Packet.OutTransferLength = 0;
-  Packet.TransactionStatus = EFI_SUCCESS;
-  CommandBlock.CommandIndex = SD_READ_SINGLE_BLOCK;
-  CommandBlock.CommandArgument = 0;
-  CommandBlock.CommandType = SdMmcCommandTypeAdtc;
-  CommandBlock.ResponseType = SdMmcResponseTypeR1;
-  ZeroMem (&StatusBlock, sizeof (EFI_SD_MMC_STATUS_BLOCK));
+  MemoryBlock = AllocateZeroPool (512);
+  SdMmcCreateSingleBlockTransferPacket (MemoryBlock, 512, &Packet, &CommandBlock, &StatusBlock);
   Status = Private->PassThru.PassThru (&Private->PassThru, 0, &Packet, NULL);
 
-  DEBUG ((DEBUG_INFO, "Status = %r\n", Status));
+  UT_ASSERT_EQUAL (Status, EFI_SUCCESS);
+  UT_ASSERT_MEM_EQUAL (MemoryBlock, TestBlock, sizeof (TestBlock));
 
-  return EFI_SUCCESS;
+  return UNIT_TEST_PASSED;
+}
+
+EFI_STATUS
+EFIAPI
+UefiTestMain (
+  VOID
+  )
+{
+  EFI_STATUS                  Status;
+  UNIT_TEST_FRAMEWORK_HANDLE  Framework;
+  UNIT_TEST_SUITE_HANDLE      SdMmcPassThruTest;
+  SD_MMC_HC_PRIVATE_DATA  *PrivateForPio;
+  SD_MMC_HC_PRIVATE_DATA  *PrivateForSdma;
+
+  SdMmcBuildControllerReadyForPioTransfer (&PrivateForPio);
+  SdMmcPrivateDataBuildControllerReadyToTransfer (&PrivateForSdma);
+
+  Framework = NULL;
+
+  DEBUG ((DEBUG_INFO, "%a v%a\n", UNIT_TEST_NAME, UNIT_TEST_VERSION));
+
+  Status = InitUnitTestFramework (&Framework, UNIT_TEST_NAME, gEfiCallerBaseName, UNIT_TEST_VERSION);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "Failed in InitUnitTestFramework. Status = %r\n", Status));
+    return Status;
+  }
+
+  Status = CreateUnitTestSuite (&SdMmcPassThruTest, Framework, "SdMmcPassThruTests", "SdMmc.PassThru", NULL, NULL);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  //AddTestCase (SdMmcPassThruTest, "SingleBlockTestSdma", "SingleBlockTestSdma", SdMmcSignleBlockReadShouldReturnDataBlockFromDevice, NULL, NULL, PrivateForSdma);
+  AddTestCase (SdMmcPassThruTest, "SingleBlockTestPio", "SingleBlockTestPio", SdMmcSignleBlockReadShouldReturnDataBlockFromDevice, NULL, NULL, PrivateForPio);
+
+  Status = RunAllTestSuites (Framework);
+
+  if (Framework) {
+    FreeUnitTestFramework (Framework);
+  }
+
+  return Status;
 }
 
 int

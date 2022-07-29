@@ -1025,13 +1025,11 @@ SdMmcPassThruExecSyncTrb (
   while (Trb->Retries) {
     Status = SdMmcWaitTrbEnv (Private, Trb);
     if (EFI_ERROR (Status)) {
-      DEBUG ((DEBUG_INFO, "Failed to wait\n"));
       return Status;
     }
 
     Status = SdMmcExecTrb (Private, Trb);
     if (EFI_ERROR (Status)) {
-      DEBUG ((DEBUG_INFO, "Failed to exec\n"));
       return Status;
     }
 
@@ -1039,7 +1037,6 @@ SdMmcPassThruExecSyncTrb (
     if (Status == EFI_CRC_ERROR) {
       Trb->Retries--;
     } else {
-      DEBUG ((DEBUG_INFO, "Failed to get result\n"));
       return Status;
     }
   }
@@ -1140,8 +1137,6 @@ SdMmcPassThruPassThru (
   }
 
   Status = SdMmcPassThruExecSyncTrb (Private, Trb);
-
-  DEBUG ((DEBUG_INFO, "Past validation\n"));
 
   SdMmcFreeTrb (Trb);
 
