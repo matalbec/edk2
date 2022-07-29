@@ -88,30 +88,21 @@ GLOBAL_REMOVE_IF_UNREFERENCED  UINT32  TestBlock[128] = {
   0xDEADBEEF
 };
 
-VOID
-SdMmcPreWrite (
-  IN SIMPLE_REGISTER_SPACE  *Map,
-  IN UINT64        Address,
-  IN UINT32        Size,
-  IN OUT UINT64    *Value,
-  IN VOID          *Context
-  )
-{
-  UINT32  Index;
+EFI_STATUS
+SdControllerMemRead (
+  IN REGISTER_SPACE  *RegisterSpace,
+  IN UINT64          Address,
+  IN UINT32          Size,
+  OUT UINT64         *Value
+  );
 
-  for (Index = 0; Index < 14; Index++) {
-    if (Map[Index].Offset == SD_MMC_HC_SDMA_ADDR) {
-      DEBUG ((DEBUG_INFO, "SDMA address %X\n", Map[Index].Value));
-      if (Map[Index].Value == 0x20) {
-        DEBUG ((DEBUG_INFO, "Copying block\n"));
-        DEBUG ((DEBUG_INFO, "Copying to %X from %X size %d\n", MemoryBlock, TestBlock, sizeof (TestBlock)));
-        CopyMem (MemoryBlock, TestBlock, sizeof (TestBlock));
-      }
-    } else if (Map[Index].Offset == SD_MMC_HC_NOR_INT_STS) {
-      Map[Index].Value = 0x3;
-    }
-  }
-}
+EFI_STATUS
+SdControllerMemWrite (
+  IN REGISTER_SPACE  *RegisterSpace,
+  IN UINT64          Address,
+  IN UINT32          Size,
+  IN UINT64          Value
+  );
 
 struct _SIMPLE_REGISTER_SPACE {
   REGISTER_SPACE  RegisterSpace;
@@ -122,6 +113,45 @@ struct _SIMPLE_REGISTER_SPACE {
   UINTN           MapSize;
   REGISTER_MAP    *Map;
 };
+
+VOID
+SdMmcPreWrite (
+  IN SIMPLE_REGISTER_SPACE  *RegisterSpace,
+  IN UINT64        Address,
+  IN UINT32        Size,
+  IN OUT UINT64    *Value,
+  IN VOID          *Context
+  )
+{
+  UINT64  SdmaAddr;
+
+  RegisterSpace->PreWrite = NULL;
+
+  if (Address == SD_MMC_HC_COMMAND) {
+    RegisterSpace->RegisterSpace.Read (
+                                         &RegisterSpace->RegisterSpace,
+                                         SD_MMC_HC_SDMA_ADDR,
+                                         4,
+                                         &SdmaAddr
+                                         );
+    DEBUG ((DEBUG_INFO, "SDMA address %X\n", SdmaAddr));
+    if (SdmaAddr == 0x20) {
+        DEBUG ((DEBUG_INFO, "Copying block\n"));
+        DEBUG ((DEBUG_INFO, "Copying to %X from %X size %d\n", MemoryBlock, TestBlock, sizeof (TestBlock)));
+        CopyMem (MemoryBlock, TestBlock, sizeof (TestBlock));
+        RegisterSpace->RegisterSpace.Write (
+          &RegisterSpace->RegisterSpace,
+          SD_MMC_HC_NOR_INT_STS,
+          4,
+          0x3
+          );
+    }
+  } else if (Address == SD_MMC_HC_NOR_INT_STS || Address == SD_MMC_HC_ERR_INT_STS) {
+    *Value = 0x0;
+  }
+
+  RegisterSpace->PreWrite = SdMmcPreWrite;
+}
 
 GLOBAL_REMOVE_IF_UNREFERENCED REGISTER_MAP gSdMemMap[] = {
   {SD_MMC_HC_PRESENT_STATE, L"SD_MMC_HC_PRESENT_STATE", 0x4, 0x0},
@@ -141,7 +171,7 @@ GLOBAL_REMOVE_IF_UNREFERENCED REGISTER_MAP gSdMemMap[] = {
 };
 
 GLOBAL_REMOVE_IF_UNREFERENCED SIMPLE_REGISTER_SPACE gSdSimpleMem = {
-  {L"SD BAR", NULL, NULL},
+  {L"SD controller MMIO space", SdControllerMemRead, SdControllerMemWrite},
   NULL,
   NULL,
   SdMmcPreWrite,
@@ -218,6 +248,12 @@ SdControllerPciWrite (
   return EFI_SUCCESS;
 }
 
+GLOBAL_REMOVE_IF_UNREFERENCED  REGISTER_SPACE  SdControllerPciSpace = {
+  L"SD controller PCI config",
+  SdControllerPciRead,
+  SdControllerPciWrite
+};
+
 EFI_STATUS
 SdControllerMemRead (
   IN REGISTER_SPACE  *RegisterSpace,
@@ -227,27 +263,30 @@ SdControllerMemRead (
   )
 {
   UINT32  Index;
+  SIMPLE_REGISTER_SPACE  *SimpleRegisterSpace;
 
-  for (Index = 0; Index < ARRAY_SIZE (gSdMemMap); Index++) {
-    if (gSdSimpleMem.Map[Index].Offset == Address) {
-      DEBUG ((DEBUG_INFO, "Reading reg %s, Value = %X\n", gSdSimpleMem.Map[Index].Name, gSdSimpleMem.Map[Index].Value));
+  SimpleRegisterSpace = (SIMPLE_REGISTER_SPACE*) RegisterSpace;
+
+  for (Index = 0; Index < SimpleRegisterSpace->MapSize; Index++) {
+    if (SimpleRegisterSpace->Map[Index].Offset == Address) {
+      DEBUG ((DEBUG_INFO, "Reading reg %s, Value = %X\n", SimpleRegisterSpace->Map[Index].Name, SimpleRegisterSpace->Map[Index].Value));
       switch (Size) {
         case 1:
-          *(UINT8*)Value = (UINT8)gSdSimpleMem.Map[Index].Value;
+          *(UINT8*)Value = (UINT8)SimpleRegisterSpace->Map[Index].Value;
           break;
         case 2:
-          *(UINT16*)Value = (UINT16)gSdSimpleMem.Map[Index].Value;
+          *(UINT16*)Value = (UINT16)SimpleRegisterSpace->Map[Index].Value;
           break;
         case 4:
-          *(UINT32*)Value = (UINT32)gSdSimpleMem.Map[Index].Value;
+          *(UINT32*)Value = (UINT32)SimpleRegisterSpace->Map[Index].Value;
           break;
         case 8:
         default:
-          *Value = gSdSimpleMem.Map[Index].Value;
+          *Value = SimpleRegisterSpace->Map[Index].Value;
           break;
       }
-      if (gSdSimpleMem.Map[Index].PostRead != NULL) {
-        gSdSimpleMem.PostRead(&gSdSimpleMem, Address, Size, Value, gSdSimpleMem.PostReadContext);
+      if (SimpleRegisterSpace->PostRead != NULL) {
+        SimpleRegisterSpace->PostRead(SimpleRegisterSpace, Address, Size, Value, SimpleRegisterSpace->PostReadContext);
       }
       return EFI_SUCCESS;
     }
@@ -268,24 +307,18 @@ SdControllerMemWrite (
 
   SimpleRegisterSpace = (SIMPLE_REGISTER_SPACE*) RegisterSpace;
 
-  for (Index = 0; Index < gSdSimpleMem.MapSize; Index++) {
-    if (gSdSimpleMem.Map[Index].Offset == Address) {
-      if (gSdSimpleMem.PreWrite != NULL) {
-        gSdSimpleMem.PreWrite(gSdSimpleMem, Address, Size, &Value, gSdSimpleMem.PreWriteContext);
+  for (Index = 0; Index < SimpleRegisterSpace->MapSize; Index++) {
+    if (SimpleRegisterSpace->Map[Index].Offset == Address) {
+      if (SimpleRegisterSpace->PreWrite != NULL) {
+        SimpleRegisterSpace->PreWrite(SimpleRegisterSpace, Address, Size, &Value, SimpleRegisterSpace->PreWriteContext);
       }
-      DEBUG ((DEBUG_INFO, "Writing reg %s with %X\n", gSdSimpleMem.Map[Index].Name, Value));
-      gSdSimpleMem.Map[Index].Value = Value;
+      DEBUG ((DEBUG_INFO, "Writing reg %s with %X\n", SimpleRegisterSpace->Map[Index].Name, Value));
+      SimpleRegisterSpace->Map[Index].Value = Value;
       return EFI_SUCCESS;
     }
   }
   return EFI_UNSUPPORTED;
 }
-
-REGISTER_SPACE  SdControllerMemSpace = {
-  L"SD controller MMIO space",
-  SdControllerMemRead,
-  SdControllerMemWrite
-};
 
 typedef struct {
   EFI_PCI_IO_PROTOCOL  PciIo;
@@ -643,7 +676,7 @@ SdMmcPrivateDataBuildControllerReadyToTransfer (
 
   MockPciDeviceInitialize (&SdControllerPciSpace, &MockPciDevice);
 
-  MockPciDeviceRegisterBar (MockPciDevice, &SdControllerMemSpace, 0);
+  MockPciDeviceRegisterBar (MockPciDevice, (REGISTER_SPACE*) &gSdSimpleMem, 0);
 
   CreatePciIoForMockPciDevice (MockPciDevice, &MockPciIo);
 
@@ -671,7 +704,7 @@ SdMmcBuildControllerReadyForPioTransfer (
 
   MockPciDeviceInitialize (&SdControllerPciSpace, &MockPciDevice);
 
-  MockPciDeviceRegisterBar (MockPciDevice, &SdControllerMemSpace, 0);
+  MockPciDeviceRegisterBar (MockPciDevice, (REGISTER_SPACE*) &gSdSimpleMem, 0);
 
   CreatePciIoForMockPciDevice (MockPciDevice, &MockPciIo);
 
@@ -767,8 +800,8 @@ UefiTestMain (
     return Status;
   }
 
-  //AddTestCase (SdMmcPassThruTest, "SingleBlockTestSdma", "SingleBlockTestSdma", SdMmcSignleBlockReadShouldReturnDataBlockFromDevice, NULL, NULL, PrivateForSdma);
-  AddTestCase (SdMmcPassThruTest, "SingleBlockTestPio", "SingleBlockTestPio", SdMmcSignleBlockReadShouldReturnDataBlockFromDevice, NULL, NULL, PrivateForPio);
+  AddTestCase (SdMmcPassThruTest, "SingleBlockTestSdma", "SingleBlockTestSdma", SdMmcSignleBlockReadShouldReturnDataBlockFromDevice, NULL, NULL, PrivateForSdma);
+  //AddTestCase (SdMmcPassThruTest, "SingleBlockTestPio", "SingleBlockTestPio", SdMmcSignleBlockReadShouldReturnDataBlockFromDevice, NULL, NULL, PrivateForPio);
 
   Status = RunAllTestSuites (Framework);
 
