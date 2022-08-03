@@ -88,6 +88,8 @@ GLOBAL_REMOVE_IF_UNREFERENCED  UINT32  TestBlock[128] = {
   0xDEADBEEF
 };
 
+GLOBAL_REMOVE_IF_UNREFERENCED UINT32 PioIndex = 0;
+
 EFI_STATUS
 SdControllerMemRead (
   IN REGISTER_SPACE  *RegisterSpace,
@@ -121,35 +123,121 @@ SdMmcPreWrite (
   IN UINT32        Size,
   IN OUT UINT64    *Value,
   IN VOID          *Context
+  );
+
+VOID
+SdMmcPostRead (
+  IN SIMPLE_REGISTER_SPACE  *RegisterSpace,
+  IN UINT64        Address,
+  IN UINT32        Size,
+  IN OUT UINT64    *Value,
+  IN VOID          *Context
+  )
+{
+  RegisterSpace->PreWrite = NULL;
+  RegisterSpace->PostRead = NULL;
+  if (Address == SD_MMC_HC_BUF_DAT_PORT) {
+    if (PioIndex < ARRAY_SIZE (TestBlock)) {
+      RegisterSpace->RegisterSpace.Write (
+        &RegisterSpace->RegisterSpace,
+        SD_MMC_HC_BUF_DAT_PORT,
+        4,
+        TestBlock[PioIndex]
+      );
+      PioIndex++;
+    } else {
+      RegisterSpace->RegisterSpace.Write (
+        &RegisterSpace->RegisterSpace,
+        SD_MMC_HC_NOR_INT_STS,
+        4,
+        BIT1
+      );
+    }
+  }
+  RegisterSpace->PostRead = SdMmcPostRead;
+  RegisterSpace->PreWrite = SdMmcPreWrite;
+}
+
+VOID
+SdMmcPreWrite (
+  IN SIMPLE_REGISTER_SPACE  *RegisterSpace,
+  IN UINT64        Address,
+  IN UINT32        Size,
+  IN OUT UINT64    *Value,
+  IN VOID          *Context
   )
 {
   UINT64  SdmaAddr;
+  UINT64  TransferMode;
+  UINT64  NormalInterrupt;
 
   RegisterSpace->PreWrite = NULL;
+  RegisterSpace->PostRead = NULL;
 
   if (Address == SD_MMC_HC_COMMAND) {
     RegisterSpace->RegisterSpace.Read (
-                                         &RegisterSpace->RegisterSpace,
-                                         SD_MMC_HC_SDMA_ADDR,
-                                         4,
-                                         &SdmaAddr
-                                         );
-    DEBUG ((DEBUG_INFO, "SDMA address %X\n", SdmaAddr));
-    if (SdmaAddr == 0x20) {
-        DEBUG ((DEBUG_INFO, "Copying block\n"));
-        DEBUG ((DEBUG_INFO, "Copying to %X from %X size %d\n", MemoryBlock, TestBlock, sizeof (TestBlock)));
-        CopyMem (MemoryBlock, TestBlock, sizeof (TestBlock));
-        RegisterSpace->RegisterSpace.Write (
-          &RegisterSpace->RegisterSpace,
-          SD_MMC_HC_NOR_INT_STS,
-          4,
-          0x3
-          );
+      &RegisterSpace->RegisterSpace,
+      SD_MMC_HC_TRANS_MOD,
+      2,
+      &TransferMode
+    );
+    if (TransferMode & BIT0) {
+      DEBUG ((DEBUG_INFO, "DMA transfer\n"));
+      RegisterSpace->RegisterSpace.Read (
+                                      &RegisterSpace->RegisterSpace,
+                                      SD_MMC_HC_SDMA_ADDR,
+                                      4,
+                                      &SdmaAddr
+                                      );
+      DEBUG ((DEBUG_INFO, "SDMA address %X\n", SdmaAddr));
+      if (SdmaAddr == 0x20) {
+          DEBUG ((DEBUG_INFO, "Copying block\n"));
+          DEBUG ((DEBUG_INFO, "Copying to %X from %X size %d\n", MemoryBlock, TestBlock, sizeof (TestBlock)));
+          CopyMem (MemoryBlock, TestBlock, sizeof (TestBlock));
+          RegisterSpace->RegisterSpace.Write (
+            &RegisterSpace->RegisterSpace,
+            SD_MMC_HC_NOR_INT_STS,
+            4,
+            0x3
+            );
+      }
+    } else {
+      DEBUG ((DEBUG_INFO, "PIO transfer\n"));
+      PioIndex = 0;
+      RegisterSpace->RegisterSpace.Write (
+        &RegisterSpace->RegisterSpace,
+        SD_MMC_HC_BUF_DAT_PORT,
+        4,
+        TestBlock[PioIndex]
+      );
+      PioIndex++;
+      RegisterSpace->RegisterSpace.Write (
+        &RegisterSpace->RegisterSpace,
+        SD_MMC_HC_NOR_INT_STS,
+        4,
+        BIT5 | BIT0
+      );
     }
-  } else if (Address == SD_MMC_HC_NOR_INT_STS || Address == SD_MMC_HC_ERR_INT_STS) {
-    *Value = 0x0;
+  } else if (Address == SD_MMC_HC_NOR_INT_STS) {
+    RegisterSpace->RegisterSpace.Read (
+      &RegisterSpace->RegisterSpace,
+      SD_MMC_HC_NOR_INT_STS,
+      4,
+      &NormalInterrupt
+    );
+    *Value = NormalInterrupt & ~(*Value);
+    DEBUG ((DEBUG_INFO, "New Normal %X\n", *Value));
+  } else if (Address == SD_MMC_HC_ERR_INT_STS) {
+    RegisterSpace->RegisterSpace.Read (
+      &RegisterSpace->RegisterSpace,
+      SD_MMC_HC_ERR_INT_STS,
+      4,
+      &NormalInterrupt
+    );
+    *Value = NormalInterrupt & ~(*Value);
   }
 
+  RegisterSpace->PostRead = SdMmcPostRead;
   RegisterSpace->PreWrite = SdMmcPreWrite;
 }
 
@@ -167,12 +255,13 @@ GLOBAL_REMOVE_IF_UNREFERENCED REGISTER_MAP gSdMemMap[] = {
   {SD_MMC_HC_RESPONSE, L"SD_MMC_HC_RESPONSE0", 0x4, 0x0},
   {SD_MMC_HC_RESPONSE + 4, L"SD_MMC_HC_RESPONSE1", 0x4, 0x0},
   {SD_MMC_HC_RESPONSE + 8, L"SD_MMC_HC_RESPONSE2", 0x4, 0x0},
-  {SD_MMC_HC_RESPONSE + 12, L"SD_MMC_HC_RESPONSE3", 0x4, 0x0}
+  {SD_MMC_HC_RESPONSE + 12, L"SD_MMC_HC_RESPONSE3", 0x4, 0x0},
+  {SD_MMC_HC_BUF_DAT_PORT, L"SD_MMC_HC_BUF_DAT_PORT", 0x4, 0x0}
 };
 
 GLOBAL_REMOVE_IF_UNREFERENCED SIMPLE_REGISTER_SPACE gSdSimpleMem = {
   {L"SD controller MMIO space", SdControllerMemRead, SdControllerMemWrite},
-  NULL,
+  SdMmcPostRead,
   NULL,
   SdMmcPreWrite,
   NULL,
@@ -291,6 +380,7 @@ SdControllerMemRead (
       return EFI_SUCCESS;
     }
   }
+  DEBUG ((DEBUG_WARN, "Unsupported register read at Address = %X\n", Address));
   return EFI_UNSUPPORTED;
 }
 
@@ -317,6 +407,7 @@ SdControllerMemWrite (
       return EFI_SUCCESS;
     }
   }
+  DEBUG ((DEBUG_WARN, "Unsupported register write at Address = %X\n", Address));
   return EFI_UNSUPPORTED;
 }
 
@@ -368,6 +459,9 @@ MockPciIoReadMem (
   MOCK_PCI_IO  *PciIo;
   MOCK_PCI_DEVICE  *PciDev;
   UINT32  Size;
+  UINT32  *Uint32Buffer;
+  UINT32  Index;
+  UINT64  Val;
 
   PciIo = (MOCK_PCI_IO*) This;
   PciDev = PciIo->MockPci;
@@ -379,6 +473,15 @@ MockPciIoReadMem (
   if (PciDev->Bar[BarIndex] == NULL) {
     DEBUG ((DEBUG_INFO, "NULL Bar\n"));
     return EFI_UNSUPPORTED;
+  }
+
+  if (Width == EfiPciIoWidthFifoUint32) {
+    Uint32Buffer = (UINT32*) Buffer;
+    for (Index = 0; Index < Count; Index++) {
+      PciDev->Bar[BarIndex]->Read (PciDev->Bar[BarIndex], Offset, 4, &Val);
+      Uint32Buffer[Index] = (UINT32) Val;
+    }
+    return EFI_SUCCESS;
   }
 
   switch (Width) {
@@ -395,6 +498,7 @@ MockPciIoReadMem (
       Size = 8;
       break;
     default:
+      DEBUG ((DEBUG_INFO, "Unsupported width\n"));
       return EFI_UNSUPPORTED;
   }
 
@@ -732,7 +836,7 @@ SdMmcCreateSingleBlockTransferPacket (
   ZeroMem (Packet, sizeof (EFI_SD_MMC_PASS_THRU_COMMAND_PACKET));
   ZeroMem (CommandBlock, sizeof (EFI_SD_MMC_COMMAND_BLOCK));
   ZeroMem (StatusBlock, sizeof (EFI_SD_MMC_STATUS_BLOCK));
-  Packet->Timeout = 1;
+  Packet->Timeout = 5;
   Packet->SdMmcCmdBlk = CommandBlock;
   Packet->SdMmcStatusBlk = StatusBlock;
   Packet->InDataBuffer = BlockBuffer;
@@ -771,6 +875,15 @@ SdMmcSignleBlockReadShouldReturnDataBlockFromDevice (
 }
 
 EFI_STATUS
+SdMmcStall (
+  IN UINTN  Microseconds
+)
+{
+  DEBUG ((DEBUG_INFO, "Called Stall\n"));
+  return EFI_SUCCESS;
+}
+
+EFI_STATUS
 EFIAPI
 UefiTestMain (
   VOID
@@ -781,6 +894,9 @@ UefiTestMain (
   UNIT_TEST_SUITE_HANDLE      SdMmcPassThruTest;
   SD_MMC_HC_PRIVATE_DATA  *PrivateForPio;
   SD_MMC_HC_PRIVATE_DATA  *PrivateForSdma;
+
+  gBS = AllocateZeroPool (sizeof (EFI_BOOT_SERVICES));
+  gBS->Stall = SdMmcStall;
 
   SdMmcBuildControllerReadyForPioTransfer (&PrivateForPio);
   SdMmcPrivateDataBuildControllerReadyToTransfer (&PrivateForSdma);
@@ -800,8 +916,8 @@ UefiTestMain (
     return Status;
   }
 
-  AddTestCase (SdMmcPassThruTest, "SingleBlockTestSdma", "SingleBlockTestSdma", SdMmcSignleBlockReadShouldReturnDataBlockFromDevice, NULL, NULL, PrivateForSdma);
-  //AddTestCase (SdMmcPassThruTest, "SingleBlockTestPio", "SingleBlockTestPio", SdMmcSignleBlockReadShouldReturnDataBlockFromDevice, NULL, NULL, PrivateForPio);
+  //AddTestCase (SdMmcPassThruTest, "SingleBlockTestSdma", "SingleBlockTestSdma", SdMmcSignleBlockReadShouldReturnDataBlockFromDevice, NULL, NULL, PrivateForSdma);
+  AddTestCase (SdMmcPassThruTest, "SingleBlockTestPio", "SingleBlockTestPio", SdMmcSignleBlockReadShouldReturnDataBlockFromDevice, NULL, NULL, PrivateForPio);
 
   Status = RunAllTestSuites (Framework);
 
