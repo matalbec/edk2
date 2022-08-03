@@ -778,6 +778,8 @@ SdMmcPrivateDataBuildControllerReadyToTransfer (
 
   *Private = AllocateCopyPool (sizeof (SD_MMC_HC_PRIVATE_DATA), &gSdMmcPciHcTemplate);
 
+  InitializeListHead (&(*Private)->Queue);
+
   MockPciDeviceInitialize (&SdControllerPciSpace, &MockPciDevice);
 
   MockPciDeviceRegisterBar (MockPciDevice, (REGISTER_SPACE*) &gSdSimpleMem, 0);
@@ -805,6 +807,8 @@ SdMmcBuildControllerReadyForPioTransfer (
   EFI_PCI_IO_PROTOCOL  *MockPciIo;
 
   *Private = AllocateCopyPool (sizeof (SD_MMC_HC_PRIVATE_DATA), &gSdMmcPciHcTemplate);
+
+  InitializeListHead (&(*Private)->Queue);
 
   MockPciDeviceInitialize (&SdControllerPciSpace, &MockPciDevice);
 
@@ -883,6 +887,21 @@ SdMmcStall (
   return EFI_SUCCESS;
 }
 
+EFI_TPL
+SdMmcRaiseTpl (
+  IN EFI_TPL      NewTpl
+  )
+{
+  return NewTpl;
+}
+
+VOID
+SdMmcRestoreTpl (
+  IN EFI_TPL      OldTpl
+  )
+{
+}
+
 EFI_STATUS
 EFIAPI
 UefiTestMain (
@@ -897,6 +916,8 @@ UefiTestMain (
 
   gBS = AllocateZeroPool (sizeof (EFI_BOOT_SERVICES));
   gBS->Stall = SdMmcStall;
+  gBS->RaiseTPL = SdMmcRaiseTpl;
+  gBS->RestoreTPL = SdMmcRestoreTpl;
 
   SdMmcBuildControllerReadyForPioTransfer (&PrivateForPio);
   SdMmcPrivateDataBuildControllerReadyToTransfer (&PrivateForSdma);

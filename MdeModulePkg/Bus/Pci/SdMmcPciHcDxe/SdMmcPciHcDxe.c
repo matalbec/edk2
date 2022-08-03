@@ -1021,6 +1021,20 @@ SdMmcPassThruExecSyncTrb (
   )
 {
   EFI_STATUS  Status;
+  EFI_TPL     OldTpl;
+
+  //
+  // Wait async I/O list is empty before execute sync I/O operation.
+  //
+  while (TRUE) {
+    OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
+    if (IsListEmpty (&Private->Queue)) {
+      gBS->RestoreTPL (OldTpl);
+      break;
+    }
+
+    gBS->RestoreTPL (OldTpl);
+  }
 
   while (Trb->Retries) {
     Status = SdMmcWaitTrbEnv (Private, Trb);

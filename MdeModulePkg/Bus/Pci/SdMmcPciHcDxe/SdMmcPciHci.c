@@ -2098,7 +2098,6 @@ SdMmcWaitTrbEnv (
     // Check Trb execution result by reading Normal Interrupt Status register.
     //
     Status = SdMmcCheckTrbEnv (Private, Trb);
-    DEBUG ((DEBUG_INFO, "Check TRB env rdy %r\n", Status));
     if (Status != EFI_NOT_READY) {
       return Status;
     }
@@ -2592,8 +2591,6 @@ SdMmcTransferDataWithPio (
   EFI_PCI_IO_PROTOCOL_WIDTH  Width;
   UINTN                      Count;
 
-  DEBUG ((DEBUG_INFO, "PIO transfer!!\n"));
-
   BlockCount = (Trb->DataLen / Trb->BlockSize);
   if (Trb->DataLen % Trb->BlockSize != 0) {
     BlockCount += 1;
@@ -2624,8 +2621,6 @@ SdMmcTransferDataWithPio (
     if ((IntStatus & BIT5) == 0) {
       return EFI_NOT_READY;
     }
-
-    DEBUG ((DEBUG_INFO, "Reading data with PIO\n"));
 
     Data16 = BIT5;
     SdMmcHcRwMmio (Private->PciIo, Trb->Slot, SD_MMC_HC_NOR_INT_STS, FALSE, sizeof (Data16), &Data16);
@@ -2746,7 +2741,6 @@ SdMmcCheckDataTransfer (
   EFI_STATUS  Status;
 
   if ((IntStatus & BIT1) != 0) {
-    DEBUG ((DEBUG_INFO, "Transfer really complete\n"));
     Data16 = BIT1;
     Status = SdMmcHcRwMmio (
                Private->PciIo,
@@ -2810,8 +2804,6 @@ SdMmcCheckTrbResult (
   EFI_SD_MMC_PASS_THRU_COMMAND_PACKET  *Packet;
   UINT16                               IntStatus;
 
-  DEBUG ((DEBUG_INFO, "Check TRB result\n"));
-
   Packet = Trb->Packet;
   //
   // Check Trb execution result by reading Normal Interrupt Status register.
@@ -2853,7 +2845,6 @@ SdMmcCheckTrbResult (
 
   if (!Trb->CommandComplete) {
     Status = SdMmcCheckCommandComplete (Private, Trb, IntStatus);
-    DEBUG ((DEBUG_INFO, "Command complete\n"));
     if (EFI_ERROR (Status)) {
       goto Done;
     }
@@ -2864,7 +2855,6 @@ SdMmcCheckTrbResult (
       (Packet->SdMmcCmdBlk->ResponseType == SdMmcResponseTypeR5b))
   {
     Status = SdMmcCheckDataTransfer (Private, Trb, IntStatus);
-    DEBUG ((DEBUG_INFO, "Transfer complete %r\n", Status));
   } else {
     Status = EFI_SUCCESS;
   }
@@ -2931,7 +2921,6 @@ SdMmcWaitTrbResult (
     gBS->Stall (1);
 
     Timeout--;
-    DEBUG ((DEBUG_INFO, "Timeout = %d\n", Timeout));
   }
 
   return EFI_TIMEOUT;
