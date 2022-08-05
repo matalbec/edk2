@@ -40,7 +40,7 @@
   PcdLib
   DevicePathLib
   UefiLib
-  MockPciIoLib
+  MockPciLib
   MapBasedMockRegisterSpaceLib
 
 [Protocols]

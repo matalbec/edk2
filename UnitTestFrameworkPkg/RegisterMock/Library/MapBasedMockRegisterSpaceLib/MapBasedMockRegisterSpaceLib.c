@@ -19,7 +19,6 @@ MapBasedRegisterMockRead (
 
   for (Index = 0; Index < SimpleRegisterSpace->MapSize; Index++) {
     if (SimpleRegisterSpace->Map[Index].Offset == Address) {
-      DEBUG ((DEBUG_INFO, "Reading reg %s, Value = %X\n", SimpleRegisterSpace->Map[Index].Name, SimpleRegisterSpace->Map[Index].Value));
       switch (Size) {
         case 1:
           *(UINT8*)Value = (UINT8)SimpleRegisterSpace->Map[Index].Value;
@@ -35,9 +34,12 @@ MapBasedRegisterMockRead (
           *Value = SimpleRegisterSpace->Map[Index].Value;
           break;
       }
-      if (SimpleRegisterSpace->PostRead != NULL) {
+      if (!SimpleRegisterSpace->SupressCallbacks && SimpleRegisterSpace->PostRead != NULL) {
+        SimpleRegisterSpace->SupressCallbacks = TRUE;
         SimpleRegisterSpace->PostRead(SimpleRegisterSpace, Address, Size, Value, SimpleRegisterSpace->PostReadContext);
+        SimpleRegisterSpace->SupressCallbacks = FALSE;
       }
+      DEBUG ((DEBUG_INFO, "Reading reg %s, Value = %X\n", SimpleRegisterSpace->Map[Index].Name, *Value));
       return EFI_SUCCESS;
     }
   }
@@ -60,8 +62,10 @@ MapBasedRegisterMockWrite (
 
   for (Index = 0; Index < SimpleRegisterSpace->MapSize; Index++) {
     if (SimpleRegisterSpace->Map[Index].Offset == Address) {
-      if (SimpleRegisterSpace->PreWrite != NULL) {
+      if (!SimpleRegisterSpace->SupressCallbacks && SimpleRegisterSpace->PreWrite != NULL) {
+        SimpleRegisterSpace->SupressCallbacks = TRUE;
         SimpleRegisterSpace->PreWrite(SimpleRegisterSpace, Address, Size, &Value, SimpleRegisterSpace->PreWriteContext);
+        SimpleRegisterSpace->SupressCallbacks = FALSE;
       }
       DEBUG ((DEBUG_INFO, "Writing reg %s with %X\n", SimpleRegisterSpace->Map[Index].Name, Value));
       SimpleRegisterSpace->Map[Index].Value = Value;

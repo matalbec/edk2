@@ -23,7 +23,7 @@
   DevicePathLib|MdePkg\Library\UefiDevicePathLib\UefiDevicePathLib.inf
   UefiLib|MdePkg\Library\UefiLib\UefiLib.inf
   UefiRuntimeServicesTableLib|MdePkg\Library\UefiRuntimeServicesTableLib\UefiRuntimeServicesTableLib.inf
-  MockPciIoLib|UnitTestFrameworkPkg\RegisterMock\Library\MockPcioIoLib\MockPciIoLib.inf
+  MockPciLib|UnitTestFrameworkPkg\RegisterMock\Library\MockPcioLib\MockPciLib.inf
   MapBasedMockRegisterSpaceLib|UnitTestFrameworkPkg\RegisterMock\Library\MapBasedMockRegisterSpaceLib\MapBasedMockRegisterSpaceLib.inf
 
 [Components]

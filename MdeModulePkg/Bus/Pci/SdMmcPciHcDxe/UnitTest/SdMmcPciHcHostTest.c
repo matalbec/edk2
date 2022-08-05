@@ -12,7 +12,7 @@
 #include <Library/DebugLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/UnitTestLib.h>
-#include <MockPciIoLib.h>
+#include <MockPciLib.h>
 #include <RegisterSpaceMock.h>
 #include <MapBasedRegisterSpaceLib.h>
 
@@ -22,44 +22,27 @@
 #define UNIT_TEST_NAME     "SdMmcPciHc driver unit tests"
 #define UNIT_TEST_VERSION  "0.1"
 
+#define SD_CONTROLLER_MODEL_NUM_OF_BLOCKS  5
+#define SD_CONTROLLER_MODE_BLOCK_SIZE  512
+
+typedef struct {
+  BOOLEAN  PioTrasnferStart;
+  UINTN    CurrentPioIndex;
+  UINT8    Block[SD_CONTROLLER_MODEL_NUM_OF_BLOCKS][SD_CONTROLLER_MODE_BLOCK_SIZE];
+} SD_CONTROLLER_CONTEXT;
+
 GLOBAL_REMOVE_IF_UNREFERENCED  VOID  *MemoryBlock;
 
-GLOBAL_REMOVE_IF_UNREFERENCED  UINT32  TestBlock[128] = {
-  0xDEADBEEF,
-  0xDEADBEEF,
-  0xDEADBEEF,
-  0xDEADBEEF,
-  0xDEADBEEF,
-  0xDEADBEEF,
-  0xDEADBEEF
+GLOBAL_REMOVE_IF_UNREFERENCED  UINT8  gTestBlock[SD_CONTROLLER_MODE_BLOCK_SIZE] = {
+  0xEF, 0xBE, 0xAD, 0xDE,
+  0xEF, 0xBE, 0xAD, 0xDE,
+  0xEF, 0xBE, 0xAD, 0xDE,
+  0xEF, 0xBE, 0xAD, 0xDE,
+  0xEF, 0xBE, 0xAD, 0xDE,
+  0xEF, 0xBE, 0xAD, 0xDE,
+  0xEF, 0xBE, 0xAD, 0xDE,
+  0xEF, 0xBE, 0xAD, 0xDE,
 };
-
-GLOBAL_REMOVE_IF_UNREFERENCED UINT32 PioIndex = 0;
-
-EFI_STATUS
-SdControllerMemRead (
-  IN REGISTER_SPACE_MOCK  *RegisterSpace,
-  IN UINT64          Address,
-  IN UINT32          Size,
-  OUT UINT64         *Value
-  );
-
-EFI_STATUS
-SdControllerMemWrite (
-  IN REGISTER_SPACE_MOCK  *RegisterSpace,
-  IN UINT64          Address,
-  IN UINT32          Size,
-  IN UINT64          Value
-  );
-
-VOID
-SdMmcPreWrite (
-  IN MAP_BASED_REGISTER_SPACE  *RegisterSpace,
-  IN UINT64        Address,
-  IN UINT32        Size,
-  IN OUT UINT64    *Value,
-  IN VOID          *Context
-  );
 
 VOID
 SdMmcPostRead (
@@ -70,28 +53,26 @@ SdMmcPostRead (
   IN VOID          *Context
   )
 {
-  RegisterSpace->PreWrite = NULL;
-  RegisterSpace->PostRead = NULL;
+  SD_CONTROLLER_CONTEXT  *SdController;
+  UINT32 *Block32;
+
+  SdController = (SD_CONTROLLER_CONTEXT*) Context;
+
   if (Address == SD_MMC_HC_BUF_DAT_PORT) {
-    if (PioIndex < ARRAY_SIZE (TestBlock)) {
-      RegisterSpace->RegisterSpace.Write (
-        &RegisterSpace->RegisterSpace,
-        SD_MMC_HC_BUF_DAT_PORT,
-        4,
-        TestBlock[PioIndex]
-      );
-      PioIndex++;
-    } else {
-      RegisterSpace->RegisterSpace.Write (
-        &RegisterSpace->RegisterSpace,
-        SD_MMC_HC_NOR_INT_STS,
-        4,
-        BIT1
-      );
+    if (SdController->PioTrasnferStart && (SdController->CurrentPioIndex < SD_CONTROLLER_MODE_BLOCK_SIZE / sizeof (UINT32))) {
+      Block32 = (UINT32*) SdController->Block[0];
+      *Value = Block32[SdController->CurrentPioIndex];
+      SdController->CurrentPioIndex++;
+      if (SdController->CurrentPioIndex >= SD_CONTROLLER_MODE_BLOCK_SIZE / sizeof (UINT32)) {
+        RegisterSpace->RegisterSpace.Write (
+          &RegisterSpace->RegisterSpace,
+          SD_MMC_HC_NOR_INT_STS,
+          4,
+          BIT1
+        );
+      }
     }
   }
-  RegisterSpace->PostRead = SdMmcPostRead;
-  RegisterSpace->PreWrite = SdMmcPreWrite;
 }
 
 VOID
@@ -106,9 +87,9 @@ SdMmcPreWrite (
   UINT64  SdmaAddr;
   UINT64  TransferMode;
   UINT64  NormalInterrupt;
+  SD_CONTROLLER_CONTEXT  *SdController;
 
-  RegisterSpace->PreWrite = NULL;
-  RegisterSpace->PostRead = NULL;
+  SdController = (SD_CONTROLLER_CONTEXT*) Context;
 
   if (Address == SD_MMC_HC_COMMAND) {
     RegisterSpace->RegisterSpace.Read (
@@ -128,8 +109,8 @@ SdMmcPreWrite (
       DEBUG ((DEBUG_INFO, "SDMA address %X\n", SdmaAddr));
       if ((UINT32)SdmaAddr == 0x20) {
           DEBUG ((DEBUG_INFO, "Copying block\n"));
-          DEBUG ((DEBUG_INFO, "Copying to %X from %X size %d\n", MemoryBlock, TestBlock, sizeof (TestBlock)));
-          CopyMem (MemoryBlock, TestBlock, sizeof (TestBlock));
+          DEBUG ((DEBUG_INFO, "Copying to %X from %X size %d\n", MemoryBlock, SdController->Block[0], SD_CONTROLLER_MODE_BLOCK_SIZE));
+          CopyMem (MemoryBlock, SdController->Block[0], SD_CONTROLLER_MODE_BLOCK_SIZE);
           RegisterSpace->RegisterSpace.Write (
             &RegisterSpace->RegisterSpace,
             SD_MMC_HC_NOR_INT_STS,
@@ -139,14 +120,8 @@ SdMmcPreWrite (
       }
     } else {
       DEBUG ((DEBUG_INFO, "PIO transfer\n"));
-      PioIndex = 0;
-      RegisterSpace->RegisterSpace.Write (
-        &RegisterSpace->RegisterSpace,
-        SD_MMC_HC_BUF_DAT_PORT,
-        4,
-        TestBlock[PioIndex]
-      );
-      PioIndex++;
+      SdController->PioTrasnferStart = TRUE;
+      SdController->CurrentPioIndex = 0;
       RegisterSpace->RegisterSpace.Write (
         &RegisterSpace->RegisterSpace,
         SD_MMC_HC_NOR_INT_STS,
@@ -172,9 +147,6 @@ SdMmcPreWrite (
     );
     *Value = NormalInterrupt & ~(*Value);
   }
-
-  RegisterSpace->PostRead = SdMmcPostRead;
-  RegisterSpace->PreWrite = SdMmcPreWrite;
 }
 
 GLOBAL_REMOVE_IF_UNREFERENCED REGISTER_MAP gSdMemMap[] = {
@@ -194,47 +166,6 @@ GLOBAL_REMOVE_IF_UNREFERENCED REGISTER_MAP gSdMemMap[] = {
   {SD_MMC_HC_RESPONSE + 12, L"SD_MMC_HC_RESPONSE3", 0x4, 0x0},
   {SD_MMC_HC_BUF_DAT_PORT, L"SD_MMC_HC_BUF_DAT_PORT", 0x4, 0x0}
 };
-
-EFI_STATUS
-MockPciDeviceInitialize (
-  IN REGISTER_SPACE_MOCK       *ConfigSpace,
-  OUT MOCK_PCI_DEVICE     **PciDev
-  )
-{
-  *PciDev = AllocateZeroPool (sizeof (MOCK_PCI_DEVICE));
-
-  (*PciDev)->ConfigSpace = ConfigSpace;
-
-  return EFI_SUCCESS;
-}
-
-EFI_STATUS
-MockPciDeviceRegisterBar (
-  IN MOCK_PCI_DEVICE  *PciDev,
-  IN REGISTER_SPACE_MOCK   *BarRegisterSpace,
-  IN UINT32           BarIndex
-  )
-{
-  if (PciDev == NULL || BarIndex > 4) {
-    return EFI_INVALID_PARAMETER;
-  }
-  PciDev->Bar[BarIndex] = BarRegisterSpace;
-  return EFI_SUCCESS;
-}
-
-EFI_STATUS
-MockPciDeviceDestroy (
-  IN MOCK_PCI_DEVICE  *PciDev
-  )
-{
-  if (PciDev == NULL) {
-    return EFI_INVALID_PARAMETER;
-  }
-
-  FreePool (PciDev);
-
-  return EFI_SUCCESS;
-}
 
 EFI_STATUS
 SdControllerPciRead (
@@ -274,8 +205,16 @@ SdMmcPrivateDataBuildControllerReadyToTransfer (
   MOCK_PCI_DEVICE  *MockPciDevice;
   EFI_PCI_IO_PROTOCOL  *MockPciIo;
   MAP_BASED_REGISTER_SPACE  *SdBar;
+  SD_CONTROLLER_CONTEXT     *Context;
+  UINTN                     Index;
 
   *Private = AllocateCopyPool (sizeof (SD_MMC_HC_PRIVATE_DATA), &gSdMmcPciHcTemplate);
+  Context = AllocateZeroPool (sizeof (SD_CONTROLLER_CONTEXT));
+
+  for (Index = 0; Index < SD_CONTROLLER_MODEL_NUM_OF_BLOCKS; Index++) {
+    CopyMem (Context->Block[Index], gTestBlock, SD_CONTROLLER_MODE_BLOCK_SIZE);
+  }
+
 
   InitializeListHead (&(*Private)->Queue);
 
@@ -286,9 +225,9 @@ SdMmcPrivateDataBuildControllerReadyToTransfer (
     gSdMemMap,
     ARRAY_SIZE (gSdMemMap),
     SdMmcPreWrite,
-    NULL,
+    Context,
     SdMmcPostRead,
-    NULL,
+    Context,
     &SdBar
   );
 
@@ -316,8 +255,15 @@ SdMmcBuildControllerReadyForPioTransfer (
   MOCK_PCI_DEVICE  *MockPciDevice;
   EFI_PCI_IO_PROTOCOL  *MockPciIo;
   MAP_BASED_REGISTER_SPACE  *SdBar;
+  UINTN                     Index;
+  SD_CONTROLLER_CONTEXT     *Context;
 
   *Private = AllocateCopyPool (sizeof (SD_MMC_HC_PRIVATE_DATA), &gSdMmcPciHcTemplate);
+  Context = AllocateZeroPool (sizeof (SD_CONTROLLER_CONTEXT));
+
+  for (Index = 0; Index < SD_CONTROLLER_MODEL_NUM_OF_BLOCKS; Index++) {
+    CopyMem (Context->Block[Index], gTestBlock, SD_CONTROLLER_MODE_BLOCK_SIZE);
+  }
 
   InitializeListHead (&(*Private)->Queue);
 
@@ -326,9 +272,9 @@ SdMmcBuildControllerReadyForPioTransfer (
     gSdMemMap,
     ARRAY_SIZE (gSdMemMap),
     SdMmcPreWrite,
-    NULL,
+    Context,
     SdMmcPostRead,
-    NULL,
+    Context,
     &SdBar
   );
 
@@ -395,7 +341,7 @@ SdMmcSignleBlockReadShouldReturnDataBlockFromDevice (
   Status = Private->PassThru.PassThru (&Private->PassThru, 0, &Packet, NULL);
 
   UT_ASSERT_EQUAL (Status, EFI_SUCCESS);
-  UT_ASSERT_MEM_EQUAL (MemoryBlock, TestBlock, sizeof (TestBlock));
+  UT_ASSERT_MEM_EQUAL (MemoryBlock, gTestBlock, sizeof (gTestBlock));
 
   return UNIT_TEST_PASSED;
 }

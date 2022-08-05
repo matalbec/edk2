@@ -2,7 +2,7 @@
 #include <Library/UefiLib.h>
 #include <Library/DebugLib.h>
 #include <Library/MemoryAllocationLib.h>
-#include <MockPciIoLib.h>
+#include <MockPciLib.h>
 
 
 EFI_STATUS
@@ -352,5 +352,46 @@ MockPciIoDestroy (
   }
 
   FreePool (PciIo);
+  return EFI_SUCCESS;
+}
+
+EFI_STATUS
+MockPciDeviceInitialize (
+  IN REGISTER_SPACE_MOCK       *ConfigSpace,
+  OUT MOCK_PCI_DEVICE     **PciDev
+  )
+{
+  *PciDev = AllocateZeroPool (sizeof (MOCK_PCI_DEVICE));
+
+  (*PciDev)->ConfigSpace = ConfigSpace;
+
+  return EFI_SUCCESS;
+}
+
+EFI_STATUS
+MockPciDeviceRegisterBar (
+  IN MOCK_PCI_DEVICE  *PciDev,
+  IN REGISTER_SPACE_MOCK   *BarRegisterSpace,
+  IN UINT32           BarIndex
+  )
+{
+  if (PciDev == NULL || BarIndex > 4) {
+    return EFI_INVALID_PARAMETER;
+  }
+  PciDev->Bar[BarIndex] = BarRegisterSpace;
+  return EFI_SUCCESS;
+}
+
+EFI_STATUS
+MockPciDeviceDestroy (
+  IN MOCK_PCI_DEVICE  *PciDev
+  )
+{
+  if (PciDev == NULL) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  FreePool (PciDev);
+
   return EFI_SUCCESS;
 }

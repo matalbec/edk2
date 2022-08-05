@@ -35,6 +35,7 @@ VOID
 
 struct _MAP_BASED_REGISTER_SPACE {
   REGISTER_SPACE_MOCK          RegisterSpace;
+  BOOLEAN                      SupressCallbacks;
   REGISTER_POST_READ_CALLBACK  PostRead;
   VOID                         *PostReadContext;
   REGISTER_PRE_WRITE_CALLBACK  PreWrite;
