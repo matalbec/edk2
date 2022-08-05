@@ -190,7 +190,7 @@ SdMmcPreWrite (
                                       &SdmaAddr
                                       );
       DEBUG ((DEBUG_INFO, "SDMA address %X\n", SdmaAddr));
-      if (SdmaAddr == 0x20) {
+      if ((UINT32)SdmaAddr == 0x20) {
           DEBUG ((DEBUG_INFO, "Copying block\n"));
           DEBUG ((DEBUG_INFO, "Copying to %X from %X size %d\n", MemoryBlock, TestBlock, sizeof (TestBlock)));
           CopyMem (MemoryBlock, TestBlock, sizeof (TestBlock));
@@ -259,15 +259,31 @@ GLOBAL_REMOVE_IF_UNREFERENCED REGISTER_MAP gSdMemMap[] = {
   {SD_MMC_HC_BUF_DAT_PORT, L"SD_MMC_HC_BUF_DAT_PORT", 0x4, 0x0}
 };
 
-GLOBAL_REMOVE_IF_UNREFERENCED SIMPLE_REGISTER_SPACE gSdSimpleMem = {
-  {L"SD controller MMIO space", SdControllerMemRead, SdControllerMemWrite},
-  SdMmcPostRead,
-  NULL,
-  SdMmcPreWrite,
-  NULL,
-  ARRAY_SIZE (gSdMemMap),
-  gSdMemMap
-};
+EFI_STATUS
+CreateSimpleRegisterSpace (
+  IN CHAR16        *RegisterSpaceDescription,
+  IN REGISTER_MAP  *RegisterMapTemplate,
+  IN UINT32        RegisterMapSize,
+  IN REGISTER_PRE_WRITE_CALLBACK  PreWrite,
+  IN VOID                         *PreWriteContext,
+  IN REGISTER_POST_READ_CALLBACK  PostRead,
+  IN VOID                         *PostReadContext,
+  OUT SIMPLE_REGISTER_SPACE       **SimpleRegisterSpace
+)
+{
+  *SimpleRegisterSpace = AllocateZeroPool (sizeof (SIMPLE_REGISTER_SPACE));
+  (*SimpleRegisterSpace)->RegisterSpace.Name = RegisterSpaceDescription;
+  (*SimpleRegisterSpace)->RegisterSpace.Read = SdControllerMemRead;
+  (*SimpleRegisterSpace)->RegisterSpace.Write = SdControllerMemWrite;
+  (*SimpleRegisterSpace)->PostRead = PostRead;
+  (*SimpleRegisterSpace)->PostReadContext = PostReadContext;
+  (*SimpleRegisterSpace)->PreWrite = PreWrite;
+  (*SimpleRegisterSpace)->PreWriteContext = PreWriteContext;
+  (*SimpleRegisterSpace)->MapSize = RegisterMapSize;
+  (*SimpleRegisterSpace)->Map = AllocateCopyPool (RegisterMapSize * sizeof (REGISTER_MAP), RegisterMapTemplate);
+
+  return EFI_SUCCESS;
+}
 
 typedef struct {
   REGISTER_SPACE  *ConfigSpace;
@@ -775,6 +791,7 @@ SdMmcPrivateDataBuildControllerReadyToTransfer (
 {
   MOCK_PCI_DEVICE  *MockPciDevice;
   EFI_PCI_IO_PROTOCOL  *MockPciIo;
+  SIMPLE_REGISTER_SPACE  *SdBar;
 
   *Private = AllocateCopyPool (sizeof (SD_MMC_HC_PRIVATE_DATA), &gSdMmcPciHcTemplate);
 
@@ -782,7 +799,18 @@ SdMmcPrivateDataBuildControllerReadyToTransfer (
 
   MockPciDeviceInitialize (&SdControllerPciSpace, &MockPciDevice);
 
-  MockPciDeviceRegisterBar (MockPciDevice, (REGISTER_SPACE*) &gSdSimpleMem, 0);
+  CreateSimpleRegisterSpace (
+    L"SD BAR",
+    gSdMemMap,
+    ARRAY_SIZE (gSdMemMap),
+    SdMmcPreWrite,
+    NULL,
+    SdMmcPostRead,
+    NULL,
+    &SdBar
+  );
+
+  MockPciDeviceRegisterBar (MockPciDevice, (REGISTER_SPACE*) SdBar, 0);
 
   CreatePciIoForMockPciDevice (MockPciDevice, &MockPciIo);
 
@@ -805,14 +833,26 @@ SdMmcBuildControllerReadyForPioTransfer (
 {
   MOCK_PCI_DEVICE  *MockPciDevice;
   EFI_PCI_IO_PROTOCOL  *MockPciIo;
+  SIMPLE_REGISTER_SPACE  *SdBar;
 
   *Private = AllocateCopyPool (sizeof (SD_MMC_HC_PRIVATE_DATA), &gSdMmcPciHcTemplate);
 
   InitializeListHead (&(*Private)->Queue);
 
+  CreateSimpleRegisterSpace (
+    L"SD BAR",
+    gSdMemMap,
+    ARRAY_SIZE (gSdMemMap),
+    SdMmcPreWrite,
+    NULL,
+    SdMmcPostRead,
+    NULL,
+    &SdBar
+  );
+
   MockPciDeviceInitialize (&SdControllerPciSpace, &MockPciDevice);
 
-  MockPciDeviceRegisterBar (MockPciDevice, (REGISTER_SPACE*) &gSdSimpleMem, 0);
+  MockPciDeviceRegisterBar (MockPciDevice, (REGISTER_SPACE*) SdBar, 0);
 
   CreatePciIoForMockPciDevice (MockPciDevice, &MockPciIo);
 
@@ -937,7 +977,7 @@ UefiTestMain (
     return Status;
   }
 
-  //AddTestCase (SdMmcPassThruTest, "SingleBlockTestSdma", "SingleBlockTestSdma", SdMmcSignleBlockReadShouldReturnDataBlockFromDevice, NULL, NULL, PrivateForSdma);
+  AddTestCase (SdMmcPassThruTest, "SingleBlockTestSdma", "SingleBlockTestSdma", SdMmcSignleBlockReadShouldReturnDataBlockFromDevice, NULL, NULL, PrivateForSdma);
   AddTestCase (SdMmcPassThruTest, "SingleBlockTestPio", "SingleBlockTestPio", SdMmcSignleBlockReadShouldReturnDataBlockFromDevice, NULL, NULL, PrivateForPio);
 
   Status = RunAllTestSuites (Framework);
