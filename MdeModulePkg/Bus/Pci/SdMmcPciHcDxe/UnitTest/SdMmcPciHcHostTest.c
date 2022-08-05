@@ -12,69 +12,15 @@
 #include <Library/DebugLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/UnitTestLib.h>
-#include <Protocol/PciIo.h>
+#include <MockPciIoLib.h>
+#include <RegisterSpaceMock.h>
+#include <MapBasedRegisterSpaceLib.h>
 
 #include "../SdMmcPciHcDxe.h"
 #include "../SdMmcPciHci.h"
 
 #define UNIT_TEST_NAME     "SdMmcPciHc driver unit tests"
 #define UNIT_TEST_VERSION  "0.1"
-
-typedef struct  _REGISTER_SPACE REGISTER_SPACE;
-
-typedef
-EFI_STATUS
-(*REGISTER_SPACE_READ) (
-  IN REGISTER_SPACE  *RegisterSpace,
-  IN UINT64          Address,
-  IN UINT32          Size,
-  OUT UINT64         *Value
-  );
-
-typedef
-EFI_STATUS
-(*REGISTER_SPACE_WRITE) (
-  IN REGISTER_SPACE  *RegisterSpace,
-  IN UINT64          Address,
-  IN UINT32          Size,
-  IN UINT64          Value
-  );
-
-struct _REGISTER_SPACE {
-  CHAR16                *Name;
-  REGISTER_SPACE_READ   Read;
-  REGISTER_SPACE_WRITE  Write;
-};
-
-typedef struct _REGISTER_MAP  REGISTER_MAP;
-typedef struct _SIMPLE_REGISTER_SPACE SIMPLE_REGISTER_SPACE;
-
-typedef
-VOID
-(*REGISTER_POST_READ_CALLBACK) (
-  IN SIMPLE_REGISTER_SPACE  *RegisterSpace,
-  IN UINT64        Address,
-  IN UINT32        Size,
-  IN OUT UINT64    *Value,
-  IN VOID          *Context
-  );
-
-typedef
-VOID
-(*REGISTER_PRE_WRITE_CALLBACK) (
-  IN SIMPLE_REGISTER_SPACE  *RegisterSpace,
-  IN UINT64        Address,
-  IN UINT32        Size,
-  IN OUT UINT64    *Value,
-  IN VOID          *Context
-  );
-
-struct _REGISTER_MAP {
-  UINT64                       Offset;
-  CHAR16*                      Name;
-  UINT32                       SizeInBytes;
-  UINT64                       Value;
-};
 
 GLOBAL_REMOVE_IF_UNREFERENCED  VOID  *MemoryBlock;
 
@@ -92,7 +38,7 @@ GLOBAL_REMOVE_IF_UNREFERENCED UINT32 PioIndex = 0;
 
 EFI_STATUS
 SdControllerMemRead (
-  IN REGISTER_SPACE  *RegisterSpace,
+  IN REGISTER_SPACE_MOCK  *RegisterSpace,
   IN UINT64          Address,
   IN UINT32          Size,
   OUT UINT64         *Value
@@ -100,25 +46,15 @@ SdControllerMemRead (
 
 EFI_STATUS
 SdControllerMemWrite (
-  IN REGISTER_SPACE  *RegisterSpace,
+  IN REGISTER_SPACE_MOCK  *RegisterSpace,
   IN UINT64          Address,
   IN UINT32          Size,
   IN UINT64          Value
   );
 
-struct _SIMPLE_REGISTER_SPACE {
-  REGISTER_SPACE  RegisterSpace;
-  REGISTER_POST_READ_CALLBACK  PostRead;
-  VOID                         *PostReadContext;
-  REGISTER_PRE_WRITE_CALLBACK  PreWrite;
-  VOID                         *PreWriteContext;
-  UINTN           MapSize;
-  REGISTER_MAP    *Map;
-};
-
 VOID
 SdMmcPreWrite (
-  IN SIMPLE_REGISTER_SPACE  *RegisterSpace,
+  IN MAP_BASED_REGISTER_SPACE  *RegisterSpace,
   IN UINT64        Address,
   IN UINT32        Size,
   IN OUT UINT64    *Value,
@@ -127,7 +63,7 @@ SdMmcPreWrite (
 
 VOID
 SdMmcPostRead (
-  IN SIMPLE_REGISTER_SPACE  *RegisterSpace,
+  IN MAP_BASED_REGISTER_SPACE  *RegisterSpace,
   IN UINT64        Address,
   IN UINT32        Size,
   IN OUT UINT64    *Value,
@@ -160,7 +96,7 @@ SdMmcPostRead (
 
 VOID
 SdMmcPreWrite (
-  IN SIMPLE_REGISTER_SPACE  *RegisterSpace,
+  IN MAP_BASED_REGISTER_SPACE  *RegisterSpace,
   IN UINT64        Address,
   IN UINT32        Size,
   IN OUT UINT64    *Value,
@@ -260,39 +196,8 @@ GLOBAL_REMOVE_IF_UNREFERENCED REGISTER_MAP gSdMemMap[] = {
 };
 
 EFI_STATUS
-CreateSimpleRegisterSpace (
-  IN CHAR16        *RegisterSpaceDescription,
-  IN REGISTER_MAP  *RegisterMapTemplate,
-  IN UINT32        RegisterMapSize,
-  IN REGISTER_PRE_WRITE_CALLBACK  PreWrite,
-  IN VOID                         *PreWriteContext,
-  IN REGISTER_POST_READ_CALLBACK  PostRead,
-  IN VOID                         *PostReadContext,
-  OUT SIMPLE_REGISTER_SPACE       **SimpleRegisterSpace
-)
-{
-  *SimpleRegisterSpace = AllocateZeroPool (sizeof (SIMPLE_REGISTER_SPACE));
-  (*SimpleRegisterSpace)->RegisterSpace.Name = RegisterSpaceDescription;
-  (*SimpleRegisterSpace)->RegisterSpace.Read = SdControllerMemRead;
-  (*SimpleRegisterSpace)->RegisterSpace.Write = SdControllerMemWrite;
-  (*SimpleRegisterSpace)->PostRead = PostRead;
-  (*SimpleRegisterSpace)->PostReadContext = PostReadContext;
-  (*SimpleRegisterSpace)->PreWrite = PreWrite;
-  (*SimpleRegisterSpace)->PreWriteContext = PreWriteContext;
-  (*SimpleRegisterSpace)->MapSize = RegisterMapSize;
-  (*SimpleRegisterSpace)->Map = AllocateCopyPool (RegisterMapSize * sizeof (REGISTER_MAP), RegisterMapTemplate);
-
-  return EFI_SUCCESS;
-}
-
-typedef struct {
-  REGISTER_SPACE  *ConfigSpace;
-  REGISTER_SPACE  *Bar[5]; // BARs 0-4
-} MOCK_PCI_DEVICE;
-
-EFI_STATUS
 MockPciDeviceInitialize (
-  IN REGISTER_SPACE       *ConfigSpace,
+  IN REGISTER_SPACE_MOCK       *ConfigSpace,
   OUT MOCK_PCI_DEVICE     **PciDev
   )
 {
@@ -306,7 +211,7 @@ MockPciDeviceInitialize (
 EFI_STATUS
 MockPciDeviceRegisterBar (
   IN MOCK_PCI_DEVICE  *PciDev,
-  IN REGISTER_SPACE   *BarRegisterSpace,
+  IN REGISTER_SPACE_MOCK   *BarRegisterSpace,
   IN UINT32           BarIndex
   )
 {
@@ -333,7 +238,7 @@ MockPciDeviceDestroy (
 
 EFI_STATUS
 SdControllerPciRead (
-  IN REGISTER_SPACE  *RegisterSpace,
+  IN REGISTER_SPACE_MOCK  *RegisterSpace,
   IN UINT64          Address,
   IN UINT32          Size,
   OUT UINT64         *Value
@@ -344,7 +249,7 @@ SdControllerPciRead (
 
 EFI_STATUS
 SdControllerPciWrite (
-  IN REGISTER_SPACE  *RegisterSpace,
+  IN REGISTER_SPACE_MOCK  *RegisterSpace,
   IN UINT64          Address,
   IN UINT32          Size,
   IN UINT64          Value
@@ -353,434 +258,11 @@ SdControllerPciWrite (
   return EFI_SUCCESS;
 }
 
-GLOBAL_REMOVE_IF_UNREFERENCED  REGISTER_SPACE  SdControllerPciSpace = {
+GLOBAL_REMOVE_IF_UNREFERENCED  REGISTER_SPACE_MOCK  SdControllerPciSpace = {
   L"SD controller PCI config",
   SdControllerPciRead,
   SdControllerPciWrite
 };
-
-EFI_STATUS
-SdControllerMemRead (
-  IN REGISTER_SPACE  *RegisterSpace,
-  IN UINT64          Address,
-  IN UINT32          Size,
-  OUT UINT64         *Value
-  )
-{
-  UINT32  Index;
-  SIMPLE_REGISTER_SPACE  *SimpleRegisterSpace;
-
-  SimpleRegisterSpace = (SIMPLE_REGISTER_SPACE*) RegisterSpace;
-
-  for (Index = 0; Index < SimpleRegisterSpace->MapSize; Index++) {
-    if (SimpleRegisterSpace->Map[Index].Offset == Address) {
-      DEBUG ((DEBUG_INFO, "Reading reg %s, Value = %X\n", SimpleRegisterSpace->Map[Index].Name, SimpleRegisterSpace->Map[Index].Value));
-      switch (Size) {
-        case 1:
-          *(UINT8*)Value = (UINT8)SimpleRegisterSpace->Map[Index].Value;
-          break;
-        case 2:
-          *(UINT16*)Value = (UINT16)SimpleRegisterSpace->Map[Index].Value;
-          break;
-        case 4:
-          *(UINT32*)Value = (UINT32)SimpleRegisterSpace->Map[Index].Value;
-          break;
-        case 8:
-        default:
-          *Value = SimpleRegisterSpace->Map[Index].Value;
-          break;
-      }
-      if (SimpleRegisterSpace->PostRead != NULL) {
-        SimpleRegisterSpace->PostRead(SimpleRegisterSpace, Address, Size, Value, SimpleRegisterSpace->PostReadContext);
-      }
-      return EFI_SUCCESS;
-    }
-  }
-  DEBUG ((DEBUG_WARN, "Unsupported register read at Address = %X\n", Address));
-  return EFI_UNSUPPORTED;
-}
-
-EFI_STATUS
-SdControllerMemWrite (
-  IN REGISTER_SPACE  *RegisterSpace,
-  IN UINT64          Address,
-  IN UINT32          Size,
-  IN UINT64          Value
-  )
-{
-  UINT32  Index;
-  SIMPLE_REGISTER_SPACE  *SimpleRegisterSpace;
-
-  SimpleRegisterSpace = (SIMPLE_REGISTER_SPACE*) RegisterSpace;
-
-  for (Index = 0; Index < SimpleRegisterSpace->MapSize; Index++) {
-    if (SimpleRegisterSpace->Map[Index].Offset == Address) {
-      if (SimpleRegisterSpace->PreWrite != NULL) {
-        SimpleRegisterSpace->PreWrite(SimpleRegisterSpace, Address, Size, &Value, SimpleRegisterSpace->PreWriteContext);
-      }
-      DEBUG ((DEBUG_INFO, "Writing reg %s with %X\n", SimpleRegisterSpace->Map[Index].Name, Value));
-      SimpleRegisterSpace->Map[Index].Value = Value;
-      return EFI_SUCCESS;
-    }
-  }
-  DEBUG ((DEBUG_WARN, "Unsupported register write at Address = %X\n", Address));
-  return EFI_UNSUPPORTED;
-}
-
-typedef struct {
-  EFI_PCI_IO_PROTOCOL  PciIo;
-  MOCK_PCI_DEVICE      *MockPci;
-} MOCK_PCI_IO;
-
-EFI_STATUS
-MockPciIoPollMem (
-  IN EFI_PCI_IO_PROTOCOL           *This,
-  IN  EFI_PCI_IO_PROTOCOL_WIDTH    Width,
-  IN  UINT8                        BarIndex,
-  IN  UINT64                       Offset,
-  IN  UINT64                       Mask,
-  IN  UINT64                       Value,
-  IN  UINT64                       Delay,
-  OUT UINT64                       *Result
-  )
-{
-  return EFI_UNSUPPORTED;
-}
-
-EFI_STATUS
-MockPciIoPollIo (
-  IN EFI_PCI_IO_PROTOCOL           *This,
-  IN  EFI_PCI_IO_PROTOCOL_WIDTH    Width,
-  IN  UINT8                        BarIndex,
-  IN  UINT64                       Offset,
-  IN  UINT64                       Mask,
-  IN  UINT64                       Value,
-  IN  UINT64                       Delay,
-  OUT UINT64                       *Result
-  )
-{
-  return EFI_UNSUPPORTED;
-}
-
-EFI_STATUS
-MockPciIoReadMem (
-  IN EFI_PCI_IO_PROTOCOL              *This,
-  IN     EFI_PCI_IO_PROTOCOL_WIDTH    Width,
-  IN     UINT8                        BarIndex,
-  IN     UINT64                       Offset,
-  IN     UINTN                        Count,
-  IN OUT VOID                         *Buffer
-  )
-{
-  MOCK_PCI_IO  *PciIo;
-  MOCK_PCI_DEVICE  *PciDev;
-  UINT32  Size;
-  UINT32  *Uint32Buffer;
-  UINT32  Index;
-  UINT64  Val;
-
-  PciIo = (MOCK_PCI_IO*) This;
-  PciDev = PciIo->MockPci;
-
-  if (BarIndex > 4) {
-    return EFI_UNSUPPORTED;
-  }
-
-  if (PciDev->Bar[BarIndex] == NULL) {
-    DEBUG ((DEBUG_INFO, "NULL Bar\n"));
-    return EFI_UNSUPPORTED;
-  }
-
-  if (Width == EfiPciIoWidthFifoUint32) {
-    Uint32Buffer = (UINT32*) Buffer;
-    for (Index = 0; Index < Count; Index++) {
-      PciDev->Bar[BarIndex]->Read (PciDev->Bar[BarIndex], Offset, 4, &Val);
-      Uint32Buffer[Index] = (UINT32) Val;
-    }
-    return EFI_SUCCESS;
-  }
-
-  switch (Width) {
-    case EfiPciIoWidthUint8:
-      Size = 1;
-      break;
-    case EfiPciIoWidthUint16:
-      Size = 2;
-      break;
-    case EfiPciIoWidthUint32:
-      Size = 4;
-      break;
-    case EfiPciIoWidthUint64:
-      Size = 8;
-      break;
-    default:
-      DEBUG ((DEBUG_INFO, "Unsupported width\n"));
-      return EFI_UNSUPPORTED;
-  }
-
-  return PciDev->Bar[BarIndex]->Read (PciDev->Bar[BarIndex], Offset, Size, (UINT64*)Buffer);
-}
-
-EFI_STATUS
-MockPciIoWriteMem (
-  IN EFI_PCI_IO_PROTOCOL              *This,
-  IN     EFI_PCI_IO_PROTOCOL_WIDTH    Width,
-  IN     UINT8                        BarIndex,
-  IN     UINT64                       Offset,
-  IN     UINTN                        Count,
-  IN OUT VOID                         *Buffer
-  )
-{
-  MOCK_PCI_IO  *PciIo;
-  MOCK_PCI_DEVICE  *PciDev;
-  UINT32  Size;
-
-  PciIo = (MOCK_PCI_IO*) This;
-  PciDev = PciIo->MockPci;
-
-  if (BarIndex > 4) {
-    return EFI_UNSUPPORTED;
-  }
-
-  if (PciDev->Bar[BarIndex] == NULL) {
-    DEBUG ((DEBUG_INFO, "NULL Bar\n"));
-    return EFI_UNSUPPORTED;
-  }
-
-  switch (Width) {
-    case EfiPciIoWidthUint8:
-      Size = 1;
-      break;
-    case EfiPciIoWidthUint16:
-      Size = 2;
-      break;
-    case EfiPciIoWidthUint32:
-      Size = 4;
-      break;
-    case EfiPciIoWidthUint64:
-      Size = 8;
-      break;
-    default:
-      return EFI_UNSUPPORTED;
-  }
-
-  return PciDev->Bar[BarIndex]->Write (PciDev->Bar[BarIndex], Offset, Size, *(UINT64*)Buffer);
-}
-
-EFI_STATUS
-MockPciIoReadIo (
-  IN EFI_PCI_IO_PROTOCOL              *This,
-  IN     EFI_PCI_IO_PROTOCOL_WIDTH    Width,
-  IN     UINT8                        BarIndex,
-  IN     UINT64                       Offset,
-  IN     UINTN                        Count,
-  IN OUT VOID                         *Buffer
-  )
-{
-  return EFI_UNSUPPORTED;
-}
-
-EFI_STATUS
-MockPciIoWriteIo (
-  IN EFI_PCI_IO_PROTOCOL              *This,
-  IN     EFI_PCI_IO_PROTOCOL_WIDTH    Width,
-  IN     UINT8                        BarIndex,
-  IN     UINT64                       Offset,
-  IN     UINTN                        Count,
-  IN OUT VOID                         *Buffer
-  )
-{
-  return EFI_UNSUPPORTED;
-}
-
-EFI_STATUS
-MockPciIoConfigRead (
-  IN EFI_PCI_IO_PROTOCOL              *This,
-  IN     EFI_PCI_IO_PROTOCOL_WIDTH    Width,
-  IN     UINT32                       Offset,
-  IN     UINTN                        Count,
-  IN OUT VOID                         *Buffer
-  )
-{
-  return EFI_UNSUPPORTED;
-}
-
-EFI_STATUS
-MockPciIoConfigWrite (
-  IN EFI_PCI_IO_PROTOCOL              *This,
-  IN     EFI_PCI_IO_PROTOCOL_WIDTH    Width,
-  IN     UINT32                       Offset,
-  IN     UINTN                        Count,
-  IN OUT VOID                         *Buffer
-  )
-{
-  return EFI_UNSUPPORTED;
-}
-
-EFI_STATUS
-MockPciIoCopyMem (
-  IN EFI_PCI_IO_PROTOCOL              *This,
-  IN     EFI_PCI_IO_PROTOCOL_WIDTH    Width,
-  IN     UINT8                        DestBarIndex,
-  IN     UINT64                       DestOffset,
-  IN     UINT8                        SrcBarIndex,
-  IN     UINT64                       SrcOffset,
-  IN     UINTN                        Count
-  )
-{
-  return EFI_UNSUPPORTED;
-}
-
-EFI_STATUS
-MockPciIoMap (
-  IN EFI_PCI_IO_PROTOCOL                *This,
-  IN     EFI_PCI_IO_PROTOCOL_OPERATION  Operation,
-  IN     VOID                           *HostAddress,
-  IN OUT UINTN                          *NumberOfBytes,
-  OUT    EFI_PHYSICAL_ADDRESS           *DeviceAddress,
-  OUT    VOID                           **Mapping
-  )
-{
-  DEBUG ((DEBUG_INFO, "Calling to map\n"));
-  *DeviceAddress = 0x20;
-  *Mapping = HostAddress;
-  return EFI_SUCCESS;
-}
-
-EFI_STATUS
-MockPciIoUnmap (
-  IN EFI_PCI_IO_PROTOCOL           *This,
-  IN  VOID                         *Mapping
-  )
-{
-  return EFI_UNSUPPORTED;
-}
-
-EFI_STATUS
-MockPciIoAllocateBuffer (
-  IN EFI_PCI_IO_PROTOCOL           *This,
-  IN  EFI_ALLOCATE_TYPE            Type,
-  IN  EFI_MEMORY_TYPE              MemoryType,
-  IN  UINTN                        Pages,
-  OUT VOID                         **HostAddress,
-  IN  UINT64                       Attributes
-  )
-{
-  return EFI_UNSUPPORTED;
-}
-
-EFI_STATUS
-MockPciIoFreeBuffer (
-  IN EFI_PCI_IO_PROTOCOL           *This,
-  IN  UINTN                        Pages,
-  IN  VOID                         *HostAddress
-  )
-{
-  return EFI_UNSUPPORTED;
-}
-
-EFI_STATUS
-MockPciIoFlush (
-  IN EFI_PCI_IO_PROTOCOL  *This
-  )
-{
-  return EFI_UNSUPPORTED;
-}
-
-EFI_STATUS
-MockPciIoGetLocation (
-  IN EFI_PCI_IO_PROTOCOL          *This,
-  OUT UINTN                       *SegmentNumber,
-  OUT UINTN                       *BusNumber,
-  OUT UINTN                       *DeviceNumber,
-  OUT UINTN                       *FunctionNumber
-  )
-{
-  return EFI_UNSUPPORTED;
-}
-
-EFI_STATUS
-MockPciIoProtocolAttributes (
-  IN EFI_PCI_IO_PROTOCOL                       *This,
-  IN  EFI_PCI_IO_PROTOCOL_ATTRIBUTE_OPERATION  Operation,
-  IN  UINT64                                   Attributes,
-  OUT UINT64                                   *Result OPTIONAL
-  )
-{
-  return EFI_UNSUPPORTED;
-}
-
-EFI_STATUS
-MockPciIoGetBarAttributes (
-  IN EFI_PCI_IO_PROTOCOL             *This,
-  IN  UINT8                          BarIndex,
-  OUT UINT64                         *Supports  OPTIONAL,
-  OUT VOID                           **Resources OPTIONAL
-  )
-{
-  return EFI_UNSUPPORTED;
-}
-
-EFI_STATUS
-MockPciIoSetBarAttributes (
-  IN EFI_PCI_IO_PROTOCOL              *This,
-  IN     UINT64                       Attributes,
-  IN     UINT8                        BarIndex,
-  IN OUT UINT64                       *Offset,
-  IN OUT UINT64                       *Length
-  )
-{
-  return EFI_UNSUPPORTED;
-}
-
-EFI_STATUS
-CreatePciIoForMockPciDevice (
-  IN MOCK_PCI_DEVICE  *MockPci,
-  OUT EFI_PCI_IO_PROTOCOL  **PciIo
-  )
-{
-  MOCK_PCI_IO  *MockPciIo;
-
-  MockPciIo = AllocateZeroPool (sizeof (MOCK_PCI_IO));
-
-  MockPciIo->MockPci = MockPci;
-
-  MockPciIo->PciIo.PollMem = MockPciIoPollMem;
-  MockPciIo->PciIo.PollIo = MockPciIoPollIo;
-  MockPciIo->PciIo.Mem.Read = MockPciIoReadMem;
-  MockPciIo->PciIo.Mem.Write = MockPciIoWriteMem;
-  MockPciIo->PciIo.Io.Read = MockPciIoReadIo;
-  MockPciIo->PciIo.Io.Write = MockPciIoWriteIo;
-  MockPciIo->PciIo.CopyMem = MockPciIoCopyMem;
-  MockPciIo->PciIo.Map = MockPciIoMap;
-  MockPciIo->PciIo.Unmap = MockPciIoUnmap;
-  MockPciIo->PciIo.AllocateBuffer = MockPciIoAllocateBuffer;
-  MockPciIo->PciIo.FreeBuffer = MockPciIoFreeBuffer;
-  MockPciIo->PciIo.Flush = MockPciIoFlush;
-  MockPciIo->PciIo.GetLocation = MockPciIoGetLocation;
-  MockPciIo->PciIo.Attributes = MockPciIoProtocolAttributes;
-  MockPciIo->PciIo.GetBarAttributes = MockPciIoGetBarAttributes;
-  MockPciIo->PciIo.SetBarAttributes = MockPciIoSetBarAttributes;
-  MockPciIo->PciIo.RomSize = 0;
-  MockPciIo->PciIo.RomImage = NULL;
-
-  *PciIo = (EFI_PCI_IO_PROTOCOL*) MockPciIo;
-
-  return EFI_SUCCESS;
-}
-
-EFI_STATUS
-MockPciIoDestroy (
-  IN EFI_PCI_IO_PROTOCOL  *PciIo
-  )
-{
-  if (PciIo == NULL) {
-    return EFI_INVALID_PARAMETER;
-  }
-
-  FreePool (PciIo);
-  return EFI_SUCCESS;
-}
 
 extern SD_MMC_HC_PRIVATE_DATA  gSdMmcPciHcTemplate;
 
@@ -791,7 +273,7 @@ SdMmcPrivateDataBuildControllerReadyToTransfer (
 {
   MOCK_PCI_DEVICE  *MockPciDevice;
   EFI_PCI_IO_PROTOCOL  *MockPciIo;
-  SIMPLE_REGISTER_SPACE  *SdBar;
+  MAP_BASED_REGISTER_SPACE  *SdBar;
 
   *Private = AllocateCopyPool (sizeof (SD_MMC_HC_PRIVATE_DATA), &gSdMmcPciHcTemplate);
 
@@ -799,7 +281,7 @@ SdMmcPrivateDataBuildControllerReadyToTransfer (
 
   MockPciDeviceInitialize (&SdControllerPciSpace, &MockPciDevice);
 
-  CreateSimpleRegisterSpace (
+  MapBasedRegisterSpaceCreate (
     L"SD BAR",
     gSdMemMap,
     ARRAY_SIZE (gSdMemMap),
@@ -810,9 +292,9 @@ SdMmcPrivateDataBuildControllerReadyToTransfer (
     &SdBar
   );
 
-  MockPciDeviceRegisterBar (MockPciDevice, (REGISTER_SPACE*) SdBar, 0);
+  MockPciDeviceRegisterBar (MockPciDevice, (REGISTER_SPACE_MOCK*) SdBar, 0);
 
-  CreatePciIoForMockPciDevice (MockPciDevice, &MockPciIo);
+  MockPciIoCreate (MockPciDevice, &MockPciIo);
 
   (*Private)->Slot[0].Enable = TRUE;
   (*Private)->Slot[0].MediaPresent = TRUE;
@@ -833,13 +315,13 @@ SdMmcBuildControllerReadyForPioTransfer (
 {
   MOCK_PCI_DEVICE  *MockPciDevice;
   EFI_PCI_IO_PROTOCOL  *MockPciIo;
-  SIMPLE_REGISTER_SPACE  *SdBar;
+  MAP_BASED_REGISTER_SPACE  *SdBar;
 
   *Private = AllocateCopyPool (sizeof (SD_MMC_HC_PRIVATE_DATA), &gSdMmcPciHcTemplate);
 
   InitializeListHead (&(*Private)->Queue);
 
-  CreateSimpleRegisterSpace (
+  MapBasedRegisterSpaceCreate (
     L"SD BAR",
     gSdMemMap,
     ARRAY_SIZE (gSdMemMap),
@@ -852,9 +334,9 @@ SdMmcBuildControllerReadyForPioTransfer (
 
   MockPciDeviceInitialize (&SdControllerPciSpace, &MockPciDevice);
 
-  MockPciDeviceRegisterBar (MockPciDevice, (REGISTER_SPACE*) SdBar, 0);
+  MockPciDeviceRegisterBar (MockPciDevice, (REGISTER_SPACE_MOCK*) SdBar, 0);
 
-  CreatePciIoForMockPciDevice (MockPciDevice, &MockPciIo);
+  MockPciIoCreate (MockPciDevice, &MockPciIo);
 
   (*Private)->Slot[0].Enable = TRUE;
   (*Private)->Slot[0].MediaPresent = TRUE;
