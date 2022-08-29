@@ -29,7 +29,14 @@ typedef struct {
   BOOLEAN  PioTrasnferStart;
   UINTN    CurrentPioIndex;
   UINT8    Block[SD_CONTROLLER_MODEL_NUM_OF_BLOCKS][SD_CONTROLLER_MODE_BLOCK_SIZE];
+  BOOLEAN  LedWasEnabled;
 } SD_CONTROLLER_CONTEXT;
+
+
+typedef struct {
+  SD_MMC_HC_PRIVATE_DATA  *Private;
+  SD_CONTROLLER_CONTEXT   *ControllerContext;
+} TEST_CONTEXT;
 
 GLOBAL_REMOVE_IF_UNREFERENCED  VOID  *MemoryBlock;
 
@@ -146,6 +153,10 @@ SdMmcPreWrite (
       &NormalInterrupt
     );
     *Value = NormalInterrupt & ~(*Value);
+  } else if (Address == SD_MMC_HC_HOST_CTRL1) {
+    if ((*Value) & BIT0) {
+      SdController->LedWasEnabled = TRUE;
+    }
   }
 }
 
@@ -199,7 +210,8 @@ extern SD_MMC_HC_PRIVATE_DATA  gSdMmcPciHcTemplate;
 
 EFI_STATUS
 SdMmcPrivateDataBuildControllerReadyToTransfer (
-  OUT SD_MMC_HC_PRIVATE_DATA  **Private
+  OUT SD_MMC_HC_PRIVATE_DATA  **Private,
+  OUT SD_CONTROLLER_CONTEXT   **ControllerContext
   )
 {
   MOCK_PCI_DEVICE  *MockPciDevice;
@@ -210,6 +222,7 @@ SdMmcPrivateDataBuildControllerReadyToTransfer (
 
   *Private = AllocateCopyPool (sizeof (SD_MMC_HC_PRIVATE_DATA), &gSdMmcPciHcTemplate);
   Context = AllocateZeroPool (sizeof (SD_CONTROLLER_CONTEXT));
+  *ControllerContext = Context;
 
   for (Index = 0; Index < SD_CONTROLLER_MODEL_NUM_OF_BLOCKS; Index++) {
     CopyMem (Context->Block[Index], gTestBlock, SD_CONTROLLER_MODE_BLOCK_SIZE);
@@ -249,7 +262,8 @@ SdMmcPrivateDataBuildControllerReadyToTransfer (
 
 EFI_STATUS
 SdMmcBuildControllerReadyForPioTransfer (
-  OUT SD_MMC_HC_PRIVATE_DATA  **Private
+  OUT SD_MMC_HC_PRIVATE_DATA  **Private,
+  OUT SD_CONTROLLER_CONTEXT   **ControllerContext
   )
 {
   MOCK_PCI_DEVICE  *MockPciDevice;
@@ -260,6 +274,7 @@ SdMmcBuildControllerReadyForPioTransfer (
 
   *Private = AllocateCopyPool (sizeof (SD_MMC_HC_PRIVATE_DATA), &gSdMmcPciHcTemplate);
   Context = AllocateZeroPool (sizeof (SD_CONTROLLER_CONTEXT));
+  *ControllerContext = Context;
 
   for (Index = 0; Index < SD_CONTROLLER_MODEL_NUM_OF_BLOCKS; Index++) {
     CopyMem (Context->Block[Index], gTestBlock, SD_CONTROLLER_MODE_BLOCK_SIZE);
@@ -328,20 +343,31 @@ SdMmcSignleBlockReadShouldReturnDataBlockFromDevice (
   IN UNIT_TEST_CONTEXT  Context
   )
 {
-  SD_MMC_HC_PRIVATE_DATA  *Private;
+  TEST_CONTEXT  *TestContext;
   EFI_SD_MMC_PASS_THRU_COMMAND_PACKET  Packet;
   EFI_SD_MMC_COMMAND_BLOCK  CommandBlock;
   EFI_SD_MMC_STATUS_BLOCK   StatusBlock;
   EFI_STATUS                Status;
+  UINT8                     HostCtl1;
 
-  Private = (SD_MMC_HC_PRIVATE_DATA*) Context;
+  TestContext = (TEST_CONTEXT*) Context;
 
   MemoryBlock = AllocateZeroPool (512);
   SdMmcCreateSingleBlockTransferPacket (MemoryBlock, 512, &Packet, &CommandBlock, &StatusBlock);
-  Status = Private->PassThru.PassThru (&Private->PassThru, 0, &Packet, NULL);
+  Status = TestContext->Private->PassThru.PassThru (&TestContext->Private->PassThru, 0, &Packet, NULL);
 
   UT_ASSERT_EQUAL (Status, EFI_SUCCESS);
   UT_ASSERT_MEM_EQUAL (MemoryBlock, gTestBlock, sizeof (gTestBlock));
+  UT_ASSERT_EQUAL (TestContext->ControllerContext->LedWasEnabled, TRUE);
+  TestContext->Private->PciIo->Mem.Read (
+    TestContext->Private->PciIo,
+    EfiPciIoWidthUint8,
+    0,
+    SD_MMC_HC_HOST_CTRL1,
+    1,
+    &HostCtl1
+  );
+  UT_ASSERT_EQUAL (HostCtl1 & BIT0, 0); // Test that LED is disabled after command completion
 
   return UNIT_TEST_PASSED;
 }
@@ -379,16 +405,16 @@ UefiTestMain (
   EFI_STATUS                  Status;
   UNIT_TEST_FRAMEWORK_HANDLE  Framework;
   UNIT_TEST_SUITE_HANDLE      SdMmcPassThruTest;
-  SD_MMC_HC_PRIVATE_DATA  *PrivateForPio;
-  SD_MMC_HC_PRIVATE_DATA  *PrivateForSdma;
+  TEST_CONTEXT            SdmaTestContext;
+  TEST_CONTEXT            PioTestContext;
 
   gBS = AllocateZeroPool (sizeof (EFI_BOOT_SERVICES));
   gBS->Stall = SdMmcStall;
   gBS->RaiseTPL = SdMmcRaiseTpl;
   gBS->RestoreTPL = SdMmcRestoreTpl;
 
-  SdMmcBuildControllerReadyForPioTransfer (&PrivateForPio);
-  SdMmcPrivateDataBuildControllerReadyToTransfer (&PrivateForSdma);
+  SdMmcBuildControllerReadyForPioTransfer (&PioTestContext.Private, &PioTestContext.ControllerContext);
+  SdMmcPrivateDataBuildControllerReadyToTransfer (&SdmaTestContext.Private, &SdmaTestContext.ControllerContext);
 
   Framework = NULL;
 
@@ -405,8 +431,8 @@ UefiTestMain (
     return Status;
   }
 
-  AddTestCase (SdMmcPassThruTest, "SingleBlockTestSdma", "SingleBlockTestSdma", SdMmcSignleBlockReadShouldReturnDataBlockFromDevice, NULL, NULL, PrivateForSdma);
-  AddTestCase (SdMmcPassThruTest, "SingleBlockTestPio", "SingleBlockTestPio", SdMmcSignleBlockReadShouldReturnDataBlockFromDevice, NULL, NULL, PrivateForPio);
+  AddTestCase (SdMmcPassThruTest, "SingleBlockTestSdma", "SingleBlockTestSdma", SdMmcSignleBlockReadShouldReturnDataBlockFromDevice, NULL, NULL, &SdmaTestContext);
+  AddTestCase (SdMmcPassThruTest, "SingleBlockTestPio", "SingleBlockTestPio", SdMmcSignleBlockReadShouldReturnDataBlockFromDevice, NULL, NULL, &PioTestContext);
 
   Status = RunAllTestSuites (Framework);
 
