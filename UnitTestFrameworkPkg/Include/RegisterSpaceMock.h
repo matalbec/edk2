@@ -2,6 +2,7 @@
 #define _REGISTER_SPACE_MOCK_H_
 
 #include <Base.h>
+#include <Uefi.h>
 
 typedef struct  _REGISTER_SPACE_MOCK REGISTER_SPACE_MOCK;
 

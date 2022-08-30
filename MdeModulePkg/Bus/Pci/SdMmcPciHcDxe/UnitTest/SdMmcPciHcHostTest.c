@@ -372,6 +372,40 @@ SdMmcSignleBlockReadShouldReturnDataBlockFromDevice (
   return UNIT_TEST_PASSED;
 }
 
+UNIT_TEST_STATUS
+SdMmcLedShouldBeEnabledForBlockTransfer (
+  IN UNIT_TEST_CONTEXT  Context
+  )
+{
+  TEST_CONTEXT  *TestContext;
+  EFI_SD_MMC_PASS_THRU_COMMAND_PACKET  Packet;
+  EFI_SD_MMC_COMMAND_BLOCK  CommandBlock;
+  EFI_SD_MMC_STATUS_BLOCK   StatusBlock;
+  EFI_STATUS                Status;
+  UINT8                     HostCtl1;
+
+  TestContext = (TEST_CONTEXT*) Context;
+
+  TestContext->ControllerContext->LedWasEnabled = FALSE;
+  MemoryBlock = AllocateZeroPool (512);
+  SdMmcCreateSingleBlockTransferPacket (MemoryBlock, 512, &Packet, &CommandBlock, &StatusBlock);
+  Status = TestContext->Private->PassThru.PassThru (&TestContext->Private->PassThru, 0, &Packet, NULL);
+
+  UT_ASSERT_EQUAL (Status, EFI_SUCCESS);
+  UT_ASSERT_EQUAL (TestContext->ControllerContext->LedWasEnabled, TRUE);
+  TestContext->Private->PciIo->Mem.Read (
+    TestContext->Private->PciIo,
+    EfiPciIoWidthUint8,
+    0,
+    SD_MMC_HC_HOST_CTRL1,
+    1,
+    &HostCtl1
+  );
+  UT_ASSERT_EQUAL (HostCtl1 & BIT0, 0); // Test that LED is disabled after command completion
+
+  return UNIT_TEST_PASSED;
+}
+
 EFI_STATUS
 SdMmcStall (
   IN UINTN  Microseconds
@@ -433,6 +467,7 @@ UefiTestMain (
 
   AddTestCase (SdMmcPassThruTest, "SingleBlockTestSdma", "SingleBlockTestSdma", SdMmcSignleBlockReadShouldReturnDataBlockFromDevice, NULL, NULL, &SdmaTestContext);
   AddTestCase (SdMmcPassThruTest, "SingleBlockTestPio", "SingleBlockTestPio", SdMmcSignleBlockReadShouldReturnDataBlockFromDevice, NULL, NULL, &PioTestContext);
+  AddTestCase (SdMmcPassThruTest, "LedControlTest", "LedControlTest", SdMmcLedShouldBeEnabledForBlockTransfer, NULL, NULL, &SdmaTestContext);
 
   Status = RunAllTestSuites (Framework);
 

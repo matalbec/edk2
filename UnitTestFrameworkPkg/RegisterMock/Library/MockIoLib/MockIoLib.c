@@ -6,22 +6,55 @@ typedef struct {
   REGISTER_SPACE_MOCK  *RegisterMock;
 } MOCK_IO_MEMORY_MAP;
 
-GLOBAL_REMOVE_IF_UNREFERENCED  MOCK_IO_MEMORY_MAP  *gMockIoMap = NULL;
-GLOBAL_REMOVE_IF_UNREFERENCED  MOCK_IO_MEMORY_MAP  *gMockMmioMap = NULL;
+GLOBAL_REMOVE_IF_UNREFERENCED  MOCK_IO_MEMORY_MAP  gMockIoMap[5] = {
+  {0, 0, NULL},
+  {0, 0, NULL},
+  {0, 0, NULL},
+  {0, 0, NULL},
+  {0, 0, NULL},
+};
+
+GLOBAL_REMOVE_IF_UNREFERENCED UINT32 gMockIoMapSize = 0;
+
+GLOBAL_REMOVE_IF_UNREFERENCED  MOCK_IO_MEMORY_MAP  gMockMmioMap[5] = {
+  {0, 0, NULL},
+  {0, 0, NULL},
+  {0, 0, NULL},
+  {0, 0, NULL},
+  {0, 0, NULL},
+};
+
+GLOBAL_REMOVE_IF_UNREFERENCED UINT32 gMockMmioMapSize = 0;
 
 REGISTER_SPACE_MOCK*
 MockIoGetRegisterSpace (
   IN UINT64               Address,
-  IN MOCK_IO_MEMORY_TYPE  MemoryType
+  IN MOCK_IO_MEMORY_TYPE  MemoryType,
+  OUT UINT64              *Offset
 )
 {
+  UINT32  Index;
+  MOCK_IO_MEMORY_MAP  *MemoryMap;
+  UINT32  MapSize;
+
   switch (MemoryType) {
     case MockIoTypeIo:
-      return gMockIoMap->RegisterMock;
+      MemoryMap = gMockIoMap;
+      MapSize = gMockIoMapSize;
     case MockIoTypeMmio:
     default:
-      return gMockMmioMap->RegisterMock;
+      MemoryMap = gMockMmioMap;
+      MapSize = gMockMmioMapSize;
   }
+
+  for (Index = 0; Index < MapSize; Index++) {
+    if (Address >= MemoryMap[Index].Address && Address < (MemoryMap[Index].Address + MemoryMap[Index].Size)) {
+      *Offset = Address - MemoryMap[Index].Address;
+      return MemoryMap[Index].RegisterMock;
+    }
+  }
+
+  return NULL;
 }
 
 EFI_STATUS
@@ -30,23 +63,28 @@ MockIoRegisterMmioAtAddress (
   IN MOCK_IO_MEMORY_TYPE  Type,
   IN UINT64               Address,
   IN UINT64               Size
-)
+  )
 {
-  MOCK_IO_MEMORY_MAP  **Map;
+  MOCK_IO_MEMORY_MAP  *Map;
+  UINT32              *MapSize;
 
   switch (Type) {
     case MockIoTypeIo:
-      Map = &gMockIoMap;
+      Map = gMockIoMap;
+      MapSize = &gMockIoMapSize;
       break;
     case MockIoTypeMmio:
     default:
-      Map = &gMockMmioMap;
+      Map = gMockMmioMap;
+      MapSize = &gMockMmioMapSize;
       break;
   }
-  *Map = AllocateZeroPool (sizeof (MOCK_IO_MEMORY_MAP));
-  (*Map)->Address = Address;
-  (*Map)->Size = Size;
-  (*Map)->RegisterMock = RegisterSpaceMock;
+
+  Map[*MapSize].Address = Address;
+  Map[*MapSize].Size = Size;
+  Map[*MapSize].RegisterMock = RegisterSpaceMock;
+
+  *MapSize = (*MapSize) + 1;
 
   return EFI_SUCCESS;
 }
@@ -73,10 +111,11 @@ IoRead8 (
 {
   REGISTER_SPACE_MOCK  *Mock;
   UINT64               Value;
+  UINT64               Offset;
 
-  Mock = MockIoGetRegisterSpace (Port, MockIoTypeIo);
+  Mock = MockIoGetRegisterSpace (Port, MockIoTypeIo, &Offset);
 
-  Mock->Read (Mock, Port, 1, &Value);
+  Mock->Read (Mock, Offset, 1, &Value);
   return (UINT8) Value;
 }
 
@@ -105,11 +144,12 @@ IoWrite8 (
 {
   REGISTER_SPACE_MOCK  *Mock;
   UINT64                Val;
+  UINT64               Offset;
 
-  Mock = MockIoGetRegisterSpace (Port, MockIoTypeIo);
+  Mock = MockIoGetRegisterSpace (Port, MockIoTypeIo, &Offset);
 
   Val = Value;
-  Mock->Write (Mock, Port, 1, Val);
+  Mock->Write (Mock, Offset, 1, Val);
   return Value;
 }
 
@@ -198,7 +238,7 @@ IoOr8 (
 
   Val = IoRead8 (Port);
   Val |= OrData;
-  IoWrite8 (Port, Val);
+  return IoWrite8 (Port, Val);
 }
 
 /**
@@ -230,7 +270,7 @@ IoAnd8 (
 
   Val = IoRead8 (Port);
   Val &= AndData;
-  IoWrite8 (Port, Val);
+  return IoWrite8 (Port, Val);
 }
 
 /**
@@ -266,7 +306,7 @@ IoAndThenOr8 (
   Val = IoRead8 (Port);
   Val &= AndData;
   Val |= OrData;
-  IoWrite8 (Port, Val);
+  return IoWrite8 (Port, Val);
 }
 
 /**
@@ -477,10 +517,11 @@ IoRead16 (
 {
   REGISTER_SPACE_MOCK  *Mock;
   UINT64               Value;
+  UINT64               Offset;
 
-  Mock = MockIoGetRegisterSpace (Port, MockIoTypeIo);
+  Mock = MockIoGetRegisterSpace (Port, MockIoTypeIo, &Offset);
 
-  Mock->Read (Mock, Port, 2, &Value);
+  Mock->Read (Mock, Offset, 2, &Value);
   return (UINT16) Value;
 }
 
@@ -509,11 +550,12 @@ IoWrite16 (
 {
   REGISTER_SPACE_MOCK  *Mock;
   UINT64                Val;
+  UINT64                Offset;
 
-  Mock = MockIoGetRegisterSpace (Port, MockIoTypeIo);
+  Mock = MockIoGetRegisterSpace (Port, MockIoTypeIo, &Offset);
 
   Val = Value;
-  Mock->Write (Mock, Port, 2, Val);
+  Mock->Write (Mock, Offset, 2, Val);
   return Value;
 }
 
@@ -601,7 +643,7 @@ IoOr16 (
 
   Val = IoRead16 (Port);
   Val |= OrData;
-  IoWrite16 (Port, Val);
+  return IoWrite16 (Port, Val);
 }
 
 /**
@@ -633,8 +675,8 @@ IoAnd16 (
   UINT16  Val;
 
   Val = IoRead16 (Port);
-  Val &= OrData;
-  IoWrite16 (Port, Val);
+  Val |= AndData;
+  return IoWrite16 (Port, Val);
 }
 
 /**
@@ -671,7 +713,7 @@ IoAndThenOr16 (
   Val = IoRead16 (Port);
   Val &= AndData;
   Val |= OrData;
-  IoWrite16 (Port, Val);
+  return IoWrite16 (Port, Val);
 }
 
 /**
@@ -887,11 +929,12 @@ IoRead32 (
   )
 {
   REGISTER_SPACE_MOCK  *Mock;
-  UINT32               Value;
+  UINT64               Value;
+  UINT64               Offset;
 
-  Mock = MockIoGetRegisterSpace (Port, MockIoTypeIo);
+  Mock = MockIoGetRegisterSpace (Port, MockIoTypeIo, &Offset);
 
-  Mock->Read (Mock, Port, 4, &Value);
+  Mock->Read (Mock, Offset, 4, &Value);
   return (UINT32) Value;
 }
 
@@ -920,11 +963,12 @@ IoWrite32 (
 {
   REGISTER_SPACE_MOCK  *Mock;
   UINT64                Val;
+  UINT64               Offset;
 
-  Mock = MockIoGetRegisterSpace (Port, MockIoTypeIo);
+  Mock = MockIoGetRegisterSpace (Port, MockIoTypeIo, &Offset);
 
   Val = Value;
-  Mock->Write (Mock, Port, 4, Val);
+  Mock->Write (Mock, Offset, 4, Val);
   return Value;
 }
 
@@ -1014,7 +1058,7 @@ IoOr32 (
 
   Val = IoRead32 (Port);
   Val |= OrData;
-  IoWrite32 (Port, Val);
+  return IoWrite32 (Port, Val);
 }
 
 /**
@@ -1047,7 +1091,7 @@ IoAnd32 (
 
   Val = IoRead32 (Port);
   Val &= AndData;
-  IoWrite32 (Port, Val);
+  return IoWrite32 (Port, Val);
 }
 
 /**
@@ -1084,7 +1128,7 @@ IoAndThenOr32 (
   Val = IoRead32 (Port);
   Val &= AndData;
   Val |= OrData;
-  IoWrite32 (Port, Val);
+  return IoWrite32 (Port, Val);
 }
 
 /**
@@ -1301,10 +1345,11 @@ IoRead64 (
 {
   REGISTER_SPACE_MOCK  *Mock;
   UINT64               Value;
+  UINT64               Offset;
 
-  Mock = MockIoGetRegisterSpace (Port, MockIoTypeIo);
+  Mock = MockIoGetRegisterSpace (Port, MockIoTypeIo, &Offset);
 
-  Mock->Read (Mock, Port, 8, &Value);
+  Mock->Read (Mock, Offset, 8, &Value);
   return (UINT64) Value;
 }
 
@@ -1332,10 +1377,11 @@ IoWrite64 (
   )
 {
   REGISTER_SPACE_MOCK  *Mock;
+  UINT64               Offset;
 
-  Mock = MockIoGetRegisterSpace (Port, MockIoTypeIo);
+  Mock = MockIoGetRegisterSpace (Port, MockIoTypeIo, &Offset);
 
-  Mock->Write (Mock, Port, 8, Value);
+  Mock->Write (Mock, Offset, 8, Value);
   return Value;
 }
 
@@ -1369,7 +1415,7 @@ IoOr64 (
 
   Val = IoRead64 (Port);
   Val |= OrData;
-  IoWrite64 (Port, Val);
+  return IoWrite64 (Port, Val);
 }
 
 /**
@@ -1402,7 +1448,7 @@ IoAnd64 (
 
   Val = IoRead64 (Port);
   Val &= AndData;
-  IoWrite64 (Port, Val);
+  return IoWrite64 (Port, Val);
 }
 
 /**
@@ -1439,7 +1485,7 @@ IoAndThenOr64 (
   Val = IoRead64 (Port);
   Val &= AndData;
   Val |= OrData;
-  IoWrite64 (Port, Val);
+  return IoWrite64 (Port, Val);
 }
 
 /**
@@ -1655,10 +1701,11 @@ MmioRead8 (
 {
   REGISTER_SPACE_MOCK  *Mock;
   UINT64               Value;
+  UINT64               Offset;
 
-  Mock = MockIoGetRegisterSpace (Address, MockIoTypeMmio);
+  Mock = MockIoGetRegisterSpace (Address, MockIoTypeMmio, &Offset);
 
-  Mock->Read (Mock, Address, 1, &Value);
+  Mock->Read (Mock, Offset, 1, &Value);
   return (UINT8) Value;
 }
 
@@ -1686,11 +1733,12 @@ MmioWrite8 (
 {
   REGISTER_SPACE_MOCK  *Mock;
   UINT64               Val;
+  UINT64               Offset;
 
-  Mock = MockIoGetRegisterSpace (Address, MockIoTypeMmio);
+  Mock = MockIoGetRegisterSpace (Address, MockIoTypeMmio, &Offset);
 
   Val = Value;
-  Mock->Write (Mock, Address, 1, Val);
+  Mock->Write (Mock, Offset, 1, Val);
   return (UINT8) Value;
 }
 
@@ -1717,7 +1765,14 @@ EFIAPI
 MmioOr8 (
   IN      UINTN  Address,
   IN      UINT8  OrData
-  );
+  )
+{
+  UINT8  Val;
+
+  Val = MmioRead8 (Address);
+  Val |= OrData;
+  return MmioWrite8 (Address, Val);
+}
 
 /**
   Reads an 8-bit MMIO register, performs a bitwise AND, and writes the result
@@ -1742,7 +1797,14 @@ EFIAPI
 MmioAnd8 (
   IN      UINTN  Address,
   IN      UINT8  AndData
-  );
+  )
+{
+  UINT8  Val;
+
+  Val = MmioRead8 (Address);
+  Val &= AndData;
+  return MmioWrite8 (Address, Val);
+}
 
 /**
   Reads an 8-bit MMIO register, performs a bitwise AND followed by a bitwise
@@ -1771,7 +1833,15 @@ MmioAndThenOr8 (
   IN      UINTN  Address,
   IN      UINT8  AndData,
   IN      UINT8  OrData
-  );
+  )
+{
+  UINT8  Val;
+
+  Val = MmioRead8 (Address);
+  Val &= AndData;
+  Val |= OrData;
+  return MmioWrite8 (Address, Val);
+}
 
 /**
   Reads a bit field of a MMIO register.
@@ -1799,7 +1869,10 @@ MmioBitFieldRead8 (
   IN      UINTN  Address,
   IN      UINTN  StartBit,
   IN      UINTN  EndBit
-  );
+  )
+{
+  return 0;
+}
 
 /**
   Writes a bit field to a MMIO register.
@@ -1831,7 +1904,10 @@ MmioBitFieldWrite8 (
   IN      UINTN  StartBit,
   IN      UINTN  EndBit,
   IN      UINT8  Value
-  );
+  )
+{
+  return 0;
+}
 
 /**
   Reads a bit field in an 8-bit MMIO register, performs a bitwise OR, and
@@ -1867,7 +1943,10 @@ MmioBitFieldOr8 (
   IN      UINTN  StartBit,
   IN      UINTN  EndBit,
   IN      UINT8  OrData
-  );
+  )
+{
+  return 0;
+}
 
 /**
   Reads a bit field in an 8-bit MMIO register, performs a bitwise AND, and
@@ -1903,7 +1982,10 @@ MmioBitFieldAnd8 (
   IN      UINTN  StartBit,
   IN      UINTN  EndBit,
   IN      UINT8  AndData
-  );
+  )
+{
+  return 0;
+}
 
 /**
   Reads a bit field in an 8-bit MMIO register, performs a bitwise AND followed
@@ -1943,7 +2025,10 @@ MmioBitFieldAndThenOr8 (
   IN      UINTN  EndBit,
   IN      UINT8  AndData,
   IN      UINT8  OrData
-  );
+  )
+{
+  return 0;
+}
 
 /**
   Reads a 16-bit MMIO register.
@@ -1964,7 +2049,17 @@ UINT16
 EFIAPI
 MmioRead16 (
   IN      UINTN  Address
-  );
+  )
+{
+  REGISTER_SPACE_MOCK  *Mock;
+  UINT64               Value;
+  UINT64               Offset;
+
+  Mock = MockIoGetRegisterSpace (Address, MockIoTypeMmio, &Offset);
+
+  Mock->Read (Mock, Offset, 2, &Value);
+  return (UINT16) Value;
+}
 
 /**
   Writes a 16-bit MMIO register.
@@ -1987,7 +2082,18 @@ EFIAPI
 MmioWrite16 (
   IN      UINTN   Address,
   IN      UINT16  Value
-  );
+  )
+{
+  REGISTER_SPACE_MOCK  *Mock;
+  UINT64               Val;
+  UINT64               Offset;
+
+  Mock = MockIoGetRegisterSpace (Address, MockIoTypeMmio, &Offset);
+
+  Val = Value;
+  Mock->Write (Mock, Offset, 2, Val);
+  return (UINT16) Value;
+}
 
 /**
   Reads a 16-bit MMIO register, performs a bitwise OR, and writes the
@@ -2013,7 +2119,14 @@ EFIAPI
 MmioOr16 (
   IN      UINTN   Address,
   IN      UINT16  OrData
-  );
+  )
+{
+  UINT16  Val;
+
+  Val = MmioRead16 (Address);
+  Val |= OrData;
+  return MmioWrite16 (Address, Val);
+}
 
 /**
   Reads a 16-bit MMIO register, performs a bitwise AND, and writes the result
@@ -2039,7 +2152,14 @@ EFIAPI
 MmioAnd16 (
   IN      UINTN   Address,
   IN      UINT16  AndData
-  );
+  )
+{
+  UINT16  Val;
+
+  Val = MmioRead16 (Address);
+  Val &= AndData;
+  return MmioWrite16 (Address, Val);
+}
 
 /**
   Reads a 16-bit MMIO register, performs a bitwise AND followed by a bitwise
@@ -2068,7 +2188,15 @@ MmioAndThenOr16 (
   IN      UINTN   Address,
   IN      UINT16  AndData,
   IN      UINT16  OrData
-  );
+  )
+{
+  UINT16  Val;
+
+  Val = MmioRead16 (Address);
+  Val &= AndData;
+  Val |= OrData;
+  return MmioWrite16 (Address, Val);
+}
 
 /**
   Reads a bit field of a MMIO register.
@@ -2097,7 +2225,10 @@ MmioBitFieldRead16 (
   IN      UINTN  Address,
   IN      UINTN  StartBit,
   IN      UINTN  EndBit
-  );
+  )
+{
+  return 0;
+}
 
 /**
   Writes a bit field to a MMIO register.
@@ -2130,7 +2261,10 @@ MmioBitFieldWrite16 (
   IN      UINTN   StartBit,
   IN      UINTN   EndBit,
   IN      UINT16  Value
-  );
+  )
+{
+  return 0;
+}
 
 /**
   Reads a bit field in a 16-bit MMIO register, performs a bitwise OR, and
@@ -2167,7 +2301,10 @@ MmioBitFieldOr16 (
   IN      UINTN   StartBit,
   IN      UINTN   EndBit,
   IN      UINT16  OrData
-  );
+  )
+{
+  return 0;
+}
 
 /**
   Reads a bit field in a 16-bit MMIO register, performs a bitwise AND, and
@@ -2204,7 +2341,10 @@ MmioBitFieldAnd16 (
   IN      UINTN   StartBit,
   IN      UINTN   EndBit,
   IN      UINT16  AndData
-  );
+  )
+{
+  return 0;
+}
 
 /**
   Reads a bit field in a 16-bit MMIO register, performs a bitwise AND followed
@@ -2245,7 +2385,10 @@ MmioBitFieldAndThenOr16 (
   IN      UINTN   EndBit,
   IN      UINT16  AndData,
   IN      UINT16  OrData
-  );
+  )
+{
+  return 0;
+}
 
 /**
   Reads a 32-bit MMIO register.
@@ -2266,7 +2409,17 @@ UINT32
 EFIAPI
 MmioRead32 (
   IN      UINTN  Address
-  );
+  )
+{
+  REGISTER_SPACE_MOCK  *Mock;
+  UINT64               Value;
+  UINT64               Offset;
+
+  Mock = MockIoGetRegisterSpace (Address, MockIoTypeMmio, &Offset);
+
+  Mock->Read (Mock, Offset, 4, &Value);
+  return (UINT32) Value;
+}
 
 /**
   Writes a 32-bit MMIO register.
@@ -2289,7 +2442,18 @@ EFIAPI
 MmioWrite32 (
   IN      UINTN   Address,
   IN      UINT32  Value
-  );
+  )
+{
+  REGISTER_SPACE_MOCK  *Mock;
+  UINT64               Val;
+  UINT64               Offset;
+
+  Mock = MockIoGetRegisterSpace (Address, MockIoTypeMmio, &Offset);
+
+  Val = Value;
+  Mock->Write (Mock, Offset, 4, Val);
+  return (UINT32) Value;
+}
 
 /**
   Reads a 32-bit MMIO register, performs a bitwise OR, and writes the
@@ -2315,7 +2479,14 @@ EFIAPI
 MmioOr32 (
   IN      UINTN   Address,
   IN      UINT32  OrData
-  );
+  )
+{
+  UINT32  Val;
+
+  Val = MmioRead32 (Address);
+  Val |= OrData;
+  return MmioWrite32 (Address, Val);
+}
 
 /**
   Reads a 32-bit MMIO register, performs a bitwise AND, and writes the result
@@ -2341,7 +2512,14 @@ EFIAPI
 MmioAnd32 (
   IN      UINTN   Address,
   IN      UINT32  AndData
-  );
+  )
+{
+  UINT32  Val;
+
+  Val = MmioRead32 (Address);
+  Val &= AndData;
+  return MmioWrite32 (Address, Val);
+}
 
 /**
   Reads a 32-bit MMIO register, performs a bitwise AND followed by a bitwise
@@ -2370,7 +2548,15 @@ MmioAndThenOr32 (
   IN      UINTN   Address,
   IN      UINT32  AndData,
   IN      UINT32  OrData
-  );
+  )
+{
+  UINT32  Val;
+
+  Val = MmioRead32 (Address);
+  Val &= AndData;
+  Val |= OrData;
+  return MmioWrite32 (Address, Val);
+}
 
 /**
   Reads a bit field of a MMIO register.
@@ -2399,7 +2585,10 @@ MmioBitFieldRead32 (
   IN      UINTN  Address,
   IN      UINTN  StartBit,
   IN      UINTN  EndBit
-  );
+  )
+{
+  return 0;
+}
 
 /**
   Writes a bit field to a MMIO register.
@@ -2432,7 +2621,10 @@ MmioBitFieldWrite32 (
   IN      UINTN   StartBit,
   IN      UINTN   EndBit,
   IN      UINT32  Value
-  );
+  )
+{
+  return 0;
+}
 
 /**
   Reads a bit field in a 32-bit MMIO register, performs a bitwise OR, and
@@ -2469,7 +2661,10 @@ MmioBitFieldOr32 (
   IN      UINTN   StartBit,
   IN      UINTN   EndBit,
   IN      UINT32  OrData
-  );
+  )
+{
+  return 0;
+}
 
 /**
   Reads a bit field in a 32-bit MMIO register, performs a bitwise AND, and
@@ -2506,7 +2701,10 @@ MmioBitFieldAnd32 (
   IN      UINTN   StartBit,
   IN      UINTN   EndBit,
   IN      UINT32  AndData
-  );
+  )
+{
+  return 0;
+}
 
 /**
   Reads a bit field in a 32-bit MMIO register, performs a bitwise AND followed
@@ -2547,7 +2745,10 @@ MmioBitFieldAndThenOr32 (
   IN      UINTN   EndBit,
   IN      UINT32  AndData,
   IN      UINT32  OrData
-  );
+  )
+{
+  return 0;
+}
 
 /**
   Reads a 64-bit MMIO register.
@@ -2568,7 +2769,17 @@ UINT64
 EFIAPI
 MmioRead64 (
   IN      UINTN  Address
-  );
+  )
+{
+  REGISTER_SPACE_MOCK  *Mock;
+  UINT64               Value;
+  UINT64               Offset;
+
+  Mock = MockIoGetRegisterSpace (Address, MockIoTypeMmio, &Offset);
+
+  Mock->Read (Mock, Offset, 8, &Value);
+  return Value;
+}
 
 /**
   Writes a 64-bit MMIO register.
@@ -2589,7 +2800,18 @@ EFIAPI
 MmioWrite64 (
   IN      UINTN   Address,
   IN      UINT64  Value
-  );
+  )
+{
+  REGISTER_SPACE_MOCK  *Mock;
+  UINT64               Val;
+  UINT64               Offset;
+
+  Mock = MockIoGetRegisterSpace (Address, MockIoTypeMmio, &Offset);
+
+  Val = Value;
+  Mock->Write (Mock, Offset, 8, Val);
+  return Value;
+}
 
 /**
   Reads a 64-bit MMIO register, performs a bitwise OR, and writes the
@@ -2615,7 +2837,14 @@ EFIAPI
 MmioOr64 (
   IN      UINTN   Address,
   IN      UINT64  OrData
-  );
+  )
+{
+  UINT64  Val;
+
+  Val = MmioRead64 (Address);
+  Val |= OrData;
+  return MmioWrite64 (Address, Val);
+}
 
 /**
   Reads a 64-bit MMIO register, performs a bitwise AND, and writes the result
@@ -2641,7 +2870,14 @@ EFIAPI
 MmioAnd64 (
   IN      UINTN   Address,
   IN      UINT64  AndData
-  );
+  )
+{
+  UINT64  Val;
+
+  Val = MmioRead64 (Address);
+  Val &= AndData;
+  return MmioWrite64 (Address, Val);
+}
 
 /**
   Reads a 64-bit MMIO register, performs a bitwise AND followed by a bitwise
@@ -2670,7 +2906,15 @@ MmioAndThenOr64 (
   IN      UINTN   Address,
   IN      UINT64  AndData,
   IN      UINT64  OrData
-  );
+  )
+{
+  UINT64  Val;
+
+  Val = MmioRead64 (Address);
+  Val &= AndData;
+  Val |= OrData;
+  return MmioWrite64 (Address, Val);
+}
 
 /**
   Reads a bit field of a MMIO register.
@@ -2699,7 +2943,10 @@ MmioBitFieldRead64 (
   IN      UINTN  Address,
   IN      UINTN  StartBit,
   IN      UINTN  EndBit
-  );
+  )
+{
+  return 0;
+}
 
 /**
   Writes a bit field to a MMIO register.
@@ -2732,7 +2979,10 @@ MmioBitFieldWrite64 (
   IN      UINTN   StartBit,
   IN      UINTN   EndBit,
   IN      UINT64  Value
-  );
+  )
+{
+  return 0;
+}
 
 /**
   Reads a bit field in a 64-bit MMIO register, performs a bitwise OR, and
@@ -2769,7 +3019,10 @@ MmioBitFieldOr64 (
   IN      UINTN   StartBit,
   IN      UINTN   EndBit,
   IN      UINT64  OrData
-  );
+  )
+{
+  return 0;
+}
 
 /**
   Reads a bit field in a 64-bit MMIO register, performs a bitwise AND, and
@@ -2806,7 +3059,10 @@ MmioBitFieldAnd64 (
   IN      UINTN   StartBit,
   IN      UINTN   EndBit,
   IN      UINT64  AndData
-  );
+  )
+{
+  return 0;
+}
 
 /**
   Reads a bit field in a 64-bit MMIO register, performs a bitwise AND followed
@@ -2847,7 +3103,10 @@ MmioBitFieldAndThenOr64 (
   IN      UINTN   EndBit,
   IN      UINT64  AndData,
   IN      UINT64  OrData
-  );
+  )
+{
+  return 0;
+}
 
 /**
   Copy data from MMIO region to system memory by using 8-bit access.
@@ -2873,7 +3132,10 @@ MmioReadBuffer8 (
   IN  UINTN  StartAddress,
   IN  UINTN  Length,
   OUT UINT8  *Buffer
-  );
+  )
+{
+  return 0;
+}
 
 /**
   Copy data from MMIO region to system memory by using 16-bit access.
@@ -2903,7 +3165,10 @@ MmioReadBuffer16 (
   IN  UINTN   StartAddress,
   IN  UINTN   Length,
   OUT UINT16  *Buffer
-  );
+  )
+{
+  return 0;
+}
 
 /**
   Copy data from MMIO region to system memory by using 32-bit access.
@@ -2933,7 +3198,10 @@ MmioReadBuffer32 (
   IN  UINTN   StartAddress,
   IN  UINTN   Length,
   OUT UINT32  *Buffer
-  );
+  )
+{
+  return 0;
+}
 
 /**
   Copy data from MMIO region to system memory by using 64-bit access.
@@ -2963,7 +3231,10 @@ MmioReadBuffer64 (
   IN  UINTN   StartAddress,
   IN  UINTN   Length,
   OUT UINT64  *Buffer
-  );
+  )
+{
+  return 0;
+}
 
 /**
   Copy data from system memory to MMIO region by using 8-bit access.
@@ -2989,7 +3260,10 @@ MmioWriteBuffer8 (
   IN  UINTN        StartAddress,
   IN  UINTN        Length,
   IN  CONST UINT8  *Buffer
-  );
+  )
+{
+  return 0;
+}
 
 /**
   Copy data from system memory to MMIO region by using 16-bit access.
@@ -3020,7 +3294,10 @@ MmioWriteBuffer16 (
   IN  UINTN         StartAddress,
   IN  UINTN         Length,
   IN  CONST UINT16  *Buffer
-  );
+  )
+{
+  return 0;
+}
 
 /**
   Copy data from system memory to MMIO region by using 32-bit access.
@@ -3051,7 +3328,10 @@ MmioWriteBuffer32 (
   IN  UINTN         StartAddress,
   IN  UINTN         Length,
   IN  CONST UINT32  *Buffer
-  );
+  )
+{
+  return 0;
+}
 
 /**
   Copy data from system memory to MMIO region by using 64-bit access.
@@ -3082,4 +3362,7 @@ MmioWriteBuffer64 (
   IN  UINTN         StartAddress,
   IN  UINTN         Length,
   IN  CONST UINT64  *Buffer
-  );
+  )
+{
+  return 0x0;
+}

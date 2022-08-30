@@ -1,6 +1,7 @@
 #ifndef _MOCK_PCI_SEGMENT_LIB_H_
 #define _MOCK_PCI_SEGMENT_LIB_H_
 
+#include <Base.h>
 #include <Library/PciSegmentLib.h>
 #include <RegisterSpaceMock.h>
 
