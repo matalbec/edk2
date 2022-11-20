@@ -20,11 +20,11 @@
 
 [LibraryClasses]
   PcdLib|MdePkg/Library/BasePcdLibNull/BasePcdLibNull.inf
-  DevicePathLib|MdePkg\Library\UefiDevicePathLib\UefiDevicePathLib.inf
-  UefiLib|MdePkg\Library\UefiLib\UefiLib.inf
-  UefiRuntimeServicesTableLib|MdePkg\Library\UefiRuntimeServicesTableLib\UefiRuntimeServicesTableLib.inf
-  MockPciLib|UnitTestFrameworkPkg\RegisterMock\Library\MockPcioLib\MockPciLib.inf
-  MapBasedMockRegisterSpaceLib|UnitTestFrameworkPkg\RegisterMock\Library\MapBasedMockRegisterSpaceLib\MapBasedMockRegisterSpaceLib.inf
+  DevicePathLib|MdePkg/Library/UefiDevicePathLib/UefiDevicePathLib.inf
+  UefiLib|MdePkg/Library/UefiLib/UefiLib.inf
+  UefiRuntimeServicesTableLib|MdePkg/Library/UefiRuntimeServicesTableLib/UefiRuntimeServicesTableLib.inf
+  MockPciLib|UnitTestFrameworkPkg/RegisterMock/Library/MockPcioLib/MockPciLib.inf
+  MapBasedMockRegisterSpaceLib|UnitTestFrameworkPkg/RegisterMock/Library/MapBasedMockRegisterSpaceLib/MapBasedMockRegisterSpaceLib.inf
 
 [Components]
   MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/UnitTest/SdMmcPciHcHostTest.inf

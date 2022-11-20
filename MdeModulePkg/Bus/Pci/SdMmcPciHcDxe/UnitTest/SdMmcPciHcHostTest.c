@@ -372,6 +372,7 @@ SdMmcSignleBlockReadShouldReturnDataBlockFromDevice (
   return UNIT_TEST_PASSED;
 }
 
+EFIAPI
 UNIT_TEST_STATUS
 SdMmcLedShouldBeEnabledForBlockTransfer (
   IN UNIT_TEST_CONTEXT  Context
@@ -406,6 +407,7 @@ SdMmcLedShouldBeEnabledForBlockTransfer (
   return UNIT_TEST_PASSED;
 }
 
+EFIAPI
 EFI_STATUS
 SdMmcStall (
   IN UINTN  Microseconds
@@ -415,6 +417,7 @@ SdMmcStall (
   return EFI_SUCCESS;
 }
 
+EFIAPI
 EFI_TPL
 SdMmcRaiseTpl (
   IN EFI_TPL      NewTpl
@@ -423,6 +426,7 @@ SdMmcRaiseTpl (
   return NewTpl;
 }
 
+EFIAPI
 VOID
 SdMmcRestoreTpl (
   IN EFI_TPL      OldTpl
