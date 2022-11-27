@@ -1,0 +1,14 @@
+/home/matalbec/Dev/qemu/build/tests/qtest/libqos/libqos.fa
+/home/matalbec/Dev/qemu/build/libqemuutil.a
+/home/matalbec/Dev/qemu/build/libblock.fa
+/home/matalbec/Dev/qemu/build/libcrypto.fa
+/home/matalbec/Dev/qemu/build/libhwcore.fa
+/home/matalbec/Dev/qemu/build/libqom.fa
+/home/matalbec/Dev/qemu/build/libio.fa
+/home/matalbec/Dev/qemu/build/libblockdev.fa
+/home/matalbec/Dev/qemu/build/libchardev.fa
+/home/matalbec/Dev/qemu/build/libmigration.fa
+/home/matalbec/Dev/qemu/build/libqmp.fa
+
+command: "gcc" -o /home/matalbec/Dev/Edk2/Build/MdeModulePkg/HostTest/NOOPT_GCC5/X64/TestSdMmcPciHc -m64 -no-pie -Wl,--start-group,@/home/matalbec/Dev/Edk2/Build/MdeModulePkg/HostTest/NOOPT_GCC5/X64/MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/UnitTest/SdMmcPciHcHostTest/OUTPUT/static_library_files.lst,--end-group -lgcov `pkg-config --cflags --libs glib-2.0`
+
