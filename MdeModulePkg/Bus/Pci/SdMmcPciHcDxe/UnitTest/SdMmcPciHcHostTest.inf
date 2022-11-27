@@ -51,3 +51,6 @@
 
 [Pcd]
   gEfiMdeModulePkgTokenSpaceGuid.PcdSdMmcGenericTimeoutValue  ## CONSUMES
+
+[BuildOptions]
+  GCC:NOOPT_*_*_CC_FLAGS = -I/home/matalbec/Dev/qemu/include -I/home/matalbec/Dev/qemu/build -I/usr/include/glib-2.0 -I/usr/lib/glib-2.0/include -I/home/matalbec/Dev/qemu/tests/qtest

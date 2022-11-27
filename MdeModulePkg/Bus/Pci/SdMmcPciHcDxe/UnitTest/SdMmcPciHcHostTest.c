@@ -19,6 +19,16 @@
 #include "../SdMmcPciHcDxe.h"
 #include "../SdMmcPciHci.h"
 
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <assert.h>
+#include <stdarg.h>
+#include <glib.h>
+#include <qemu/compiler.h>
+#include <libqos/libqos-pc.h>
+#include <libqos/pci-pc.h>
+
 #define UNIT_TEST_NAME     "SdMmcPciHc driver unit tests"
 #define UNIT_TEST_VERSION  "0.1"
 
@@ -337,6 +347,32 @@ SdMmcCreateSingleBlockTransferPacket (
   CommandBlock->ResponseType = SdMmcResponseTypeR1;
 }
 
+VOID
+SdMmcCreateSingleBlockWritePacket (
+  IN VOID*  BlockBuffer,
+  IN UINT32  BlockSize,
+  OUT EFI_SD_MMC_PASS_THRU_COMMAND_PACKET  *Packet,
+  OUT EFI_SD_MMC_COMMAND_BLOCK             *CommandBlock,
+  OUT EFI_SD_MMC_STATUS_BLOCK              *StatusBlock
+  )
+{
+  ZeroMem (Packet, sizeof (EFI_SD_MMC_PASS_THRU_COMMAND_PACKET));
+  ZeroMem (CommandBlock, sizeof (EFI_SD_MMC_COMMAND_BLOCK));
+  ZeroMem (StatusBlock, sizeof (EFI_SD_MMC_STATUS_BLOCK));
+  Packet->Timeout = 5;
+  Packet->SdMmcCmdBlk = CommandBlock;
+  Packet->SdMmcStatusBlk = StatusBlock;
+  Packet->InDataBuffer = NULL;
+  Packet->OutDataBuffer = BlockBuffer;
+  Packet->InTransferLength = 0;
+  Packet->OutTransferLength = BlockSize;
+  Packet->TransactionStatus = EFI_SUCCESS;
+  CommandBlock->CommandIndex = SD_WRITE_SINGLE_BLOCK;
+  CommandBlock->CommandArgument = 0;
+  CommandBlock->CommandType = SdMmcCommandTypeAdtc;
+  CommandBlock->ResponseType = SdMmcResponseTypeR1;
+}
+
 UNIT_TEST_STATUS
 EFIAPI
 SdMmcSignleBlockReadShouldReturnDataBlockFromDevice (
@@ -434,6 +470,366 @@ SdMmcRestoreTpl (
 {
 }
 
+typedef enum {
+  QemuPciCfg,
+  QemuBar
+} QEMU_REGISTER_SPACE_TYPE;
+
+typedef struct {
+  REGISTER_SPACE_MOCK       RegisterSpace;
+  QEMU_REGISTER_SPACE_TYPE  Type;
+  QPCIDevice                *Device;
+  QPCIBar                   Bar;
+} QEMU_REGISTER_SPACE_MOCK;
+
+EFI_STATUS
+QemuPciRegisterSpaceRead (
+  IN REGISTER_SPACE_MOCK  *RegisterSpace,
+  IN UINT64               Address,
+  IN UINT32               Size,
+  OUT UINT64              *Value
+  )
+{
+  QEMU_REGISTER_SPACE_MOCK  *QemuRegisterSpace;
+
+  QemuRegisterSpace = (QEMU_REGISTER_SPACE_MOCK*) RegisterSpace;
+
+  //DEBUG ((DEBUG_INFO, "Qemu read\n"));
+  //DEBUG ((DEBUG_INFO, "Address = %X\n", Address));
+  //DEBUG ((DEBUG_INFO, "Size = %X\n", Size));
+
+  switch (QemuRegisterSpace->Type) {
+    case QemuPciCfg:
+      //DEBUG ((DEBUG_INFO, "Type = PCI\n"));
+      switch (Size) {
+        case 1:
+          *(UINT8*)Value = qpci_config_readb (QemuRegisterSpace->Device, (uint8_t) Address);
+          break;
+        case 2:
+          *(UINT16*)Value = qpci_config_readw (QemuRegisterSpace->Device, (uint8_t) Address);
+          break;
+        case 4:
+          *(UINT32*)Value = qpci_config_readl (QemuRegisterSpace->Device, (uint8_t) Address);
+          break;
+        default:
+          DEBUG ((DEBUG_ERROR, "Incorrect data width\n"));
+          *Value = 0xFFFFFFFFFFFFFFFF;
+          return EFI_DEVICE_ERROR;
+      }
+      break;
+    case QemuBar:
+      //DEBUG ((DEBUG_INFO, "Type = BAR\n"));
+      switch (Size) {
+        case 1:
+          *(UINT8*)Value = qpci_io_readb (QemuRegisterSpace->Device, QemuRegisterSpace->Bar, Address);
+          break;
+        case 2:
+          *(UINT16*)Value = qpci_io_readw (QemuRegisterSpace->Device, QemuRegisterSpace->Bar, Address);
+          break;
+        case 4:
+          *(UINT32*)Value = qpci_io_readl (QemuRegisterSpace->Device, QemuRegisterSpace->Bar, Address);
+          break;
+        default:
+          DEBUG ((DEBUG_ERROR, "Incorrect data width\n"));
+          *Value = 0xFFFFFFFFFFFFFFFF;
+          return EFI_DEVICE_ERROR;
+      }
+      break;
+  }
+  //DEBUG ((DEBUG_INFO, "Value %X\n", *Value));
+  return EFI_SUCCESS;
+}
+
+EFI_STATUS
+QemuPciRegisterSpaceWrite (
+  IN REGISTER_SPACE_MOCK  *RegisterSpace,
+  IN UINT64               Address,
+  IN UINT32               Size,
+  IN UINT64               Value
+  )
+{
+  QEMU_REGISTER_SPACE_MOCK  *QemuRegisterSpace;
+
+  QemuRegisterSpace = (QEMU_REGISTER_SPACE_MOCK*) RegisterSpace;
+
+  //DEBUG ((DEBUG_INFO, "QemuWrite\n"));
+  //DEBUG ((DEBUG_INFO, "Address = %X\n", Address));
+  //DEBUG ((DEBUG_INFO, "Size = %X\n", Size));
+
+  switch (QemuRegisterSpace->Type) {
+    case QemuPciCfg:
+      //DEBUG ((DEBUG_INFO, "Type = PCI\n"));
+      switch (Size) {
+        case 1:
+          qpci_config_writeb (QemuRegisterSpace->Device, (uint8_t) Address, (uint8_t) Value);
+          break;
+        case 2:
+          qpci_config_writew (QemuRegisterSpace->Device, (uint8_t) Address, (uint16_t) Value);
+          break;
+        case 4:
+          qpci_config_writel (QemuRegisterSpace->Device, (uint8_t) Address, (uint32_t) Value);
+          break;
+        default:
+          DEBUG ((DEBUG_ERROR, "Incorrect data width\n"));
+          return EFI_UNSUPPORTED;
+      }
+      break;
+    case QemuBar:
+      //DEBUG ((DEBUG_INFO, "Type = BAR\n"));
+      switch (Size) {
+        case 1:
+          qpci_io_writeb (QemuRegisterSpace->Device, QemuRegisterSpace->Bar, Address, (uint8_t) Value);
+          break;
+        case 2:
+          qpci_io_writew (QemuRegisterSpace->Device, QemuRegisterSpace->Bar, Address, (uint16_t) Value);
+          break;
+        case 4:
+          qpci_io_writel (QemuRegisterSpace->Device, QemuRegisterSpace->Bar, Address, (uint32_t) Value);
+          break;
+        default:
+          DEBUG ((DEBUG_ERROR, "Incorrect data width\n"));
+          return EFI_UNSUPPORTED;
+      }
+      break;
+  }
+  return EFI_SUCCESS;
+}
+
+VOID
+QemuRegisterSpaceInit (
+  IN CHAR16                    *RegisterSpaceName,
+  IN QEMU_REGISTER_SPACE_TYPE  Type,
+  IN UINTN                     BarNo,
+  IN QOSState                  *Qs,
+  OUT REGISTER_SPACE_MOCK      **RegisterSpaceMock
+  )
+{
+  QEMU_REGISTER_SPACE_MOCK  *QemuRegisterSpace;
+  QPCIBus                   *PciBus;
+  QPCIDevice                *SdhciDevice;
+  UINTN                     Device;
+  UINTN                     Function;
+
+  QemuRegisterSpace = (QEMU_REGISTER_SPACE_MOCK*) AllocateZeroPool (sizeof (QEMU_REGISTER_SPACE_MOCK));
+  QemuRegisterSpace->RegisterSpace.Name = RegisterSpaceName;
+  QemuRegisterSpace->RegisterSpace.Read = QemuPciRegisterSpaceRead;
+  QemuRegisterSpace->RegisterSpace.Write = QemuPciRegisterSpaceWrite;
+  QemuRegisterSpace->Type = Type;
+  QemuRegisterSpace->Device = NULL;
+  *RegisterSpaceMock = &QemuRegisterSpace->RegisterSpace;
+
+  PciBus = qpci_new_pc (Qs->qts, NULL);
+  if (PciBus == NULL) {
+    DEBUG ((DEBUG_INFO, "Failed to get pci bus\n"));
+  }
+  for (Device = 0; Device < 32; Device++) {
+    for (Function = 0; Function < 8; Function++) {
+      SdhciDevice = qpci_device_find (PciBus, QPCI_DEVFN (Device, Function));
+      if (SdhciDevice == NULL) {
+        continue;
+      }
+      if (qpci_config_readw (SdhciDevice, 0xA) == 0x0805) {
+        DEBUG ((DEBUG_INFO, "Found SDHCI at Dev %X, Fun %X\n", Device, Function));
+        if (Type == QemuBar) {
+          QemuRegisterSpace->Bar = qpci_iomap (SdhciDevice, BarNo, NULL);
+          qpci_device_enable (SdhciDevice);
+        }
+        QemuRegisterSpace->Device = SdhciDevice;
+        break;
+      }
+      g_free (SdhciDevice);
+    }
+    if (QemuRegisterSpace->Device != NULL) {
+      break;
+    }
+  }
+}
+
+EFI_STATUS
+SdMmcQemuBuildControllerReadyForPioTransfer (
+  IN QOSState *Qs,
+  OUT EFI_PCI_IO_PROTOCOL  **PciIo
+  )
+{
+  MOCK_PCI_DEVICE  *MockPciDevice;
+  EFI_PCI_IO_PROTOCOL  *MockPciIo;
+  REGISTER_SPACE_MOCK   *PciConfigRegisterSpace;
+  REGISTER_SPACE_MOCK   *BarRegisterSpace;
+
+  QemuRegisterSpaceInit (L"SD PCI config", QemuPciCfg, 0, Qs, &PciConfigRegisterSpace);
+  QemuRegisterSpaceInit (L"SD MEM", QemuBar, 0, Qs, &BarRegisterSpace);
+
+  MockPciDeviceInitialize (&SdControllerPciSpace, &MockPciDevice);
+
+  MockPciDeviceRegisterBar (MockPciDevice, (REGISTER_SPACE_MOCK*) BarRegisterSpace, 0);
+
+  MockPciIoCreate (MockPciDevice, &MockPciIo);
+
+  *PciIo = MockPciIo;
+
+  return EFI_SUCCESS;
+}
+
+//
+// Prioritized function list to detect card type.
+// User could add other card detection logic here.
+//
+CARD_TYPE_DETECT_ROUTINE  mCardTypeDetectRoutineTableUt[] = {
+  SdCardIdentification,
+  NULL
+};
+
+UNIT_TEST_STATUS
+EFIAPI
+SdMmcSignleBlockReadShouldReturnDataBlockFromQemuDeviceModel (
+  IN UNIT_TEST_CONTEXT  Context
+  )
+{
+  QOSState *qs;
+  SD_MMC_HC_PRIVATE_DATA  *Private;
+  EFI_PCI_IO_PROTOCOL     *PciIo;
+  EFI_STATUS                Status;
+  UINT8                     SlotNum;
+  UINT8                     FirstBar;
+  UINT8                     Slot;
+  UINT8                     Index;
+  CARD_TYPE_DETECT_ROUTINE  *Routine;
+  UINT32                    RoutineNum;
+  BOOLEAN                   MediaPresent;
+  EFI_SD_MMC_PASS_THRU_COMMAND_PACKET  Packet;
+  EFI_SD_MMC_COMMAND_BLOCK  CommandBlock;
+  EFI_SD_MMC_STATUS_BLOCK   StatusBlock;
+
+  const char*  cli = "-M q35 -device sdhci-pci -device sd-card,drive=mydrive -drive id=mydrive,if=none,format=raw,file=/home/matalbec/vm_images/sdcard.img";
+  qs = qtest_pc_boot(cli);
+
+  Private = AllocateCopyPool (sizeof (SD_MMC_HC_PRIVATE_DATA), &gSdMmcPciHcTemplate);
+  if (Private == NULL) {
+     return UNIT_TEST_PASSED;
+  }
+
+  SdMmcQemuBuildControllerReadyForPioTransfer (qs, &PciIo);
+
+  Private->ControllerHandle = NULL;
+  Private->PciIo = PciIo;
+  InitializeListHead (&Private->Queue);
+
+  //
+  // Get SD/MMC Pci Host Controller Slot info
+  //
+  Status = SdMmcHcGetSlotInfo (Private->PciIo, &FirstBar, &SlotNum);
+  if (EFI_ERROR (Status)) {
+    return UNIT_TEST_PASSED;
+  }
+
+  for (Slot = FirstBar; Slot < (FirstBar + SlotNum); Slot++) {
+    Private->Slot[Slot].Enable = TRUE;
+    //
+    // Get SD/MMC Pci Host Controller Version
+    //
+    Status = SdMmcHcGetControllerVersion (Private->PciIo, Slot, &Private->ControllerVersion[Slot]);
+    if (EFI_ERROR (Status)) {
+      continue;
+    }
+
+    Status = SdMmcHcGetCapability (Private->PciIo, Slot, &Private->Capability[Slot]);
+    if (EFI_ERROR (Status)) {
+      continue;
+    }
+
+    Private->BaseClkFreq[Slot] = Private->Capability[Slot].BaseClkFreq;
+
+    DumpCapabilityReg (Slot, &Private->Capability[Slot]);
+    DEBUG ((
+      DEBUG_INFO,
+      "Slot[%d] Base Clock Frequency: %dMHz\n",
+      Slot,
+      Private->BaseClkFreq[Slot]
+      ));
+
+    Status = SdMmcHcGetMaxCurrent (Private->PciIo, Slot, &Private->MaxCurrent[Slot]);
+    if (EFI_ERROR (Status)) {
+      continue;
+    }
+
+    Private->Slot[Slot].SlotType = Private->Capability[Slot].SlotType;
+    if ((Private->Slot[Slot].SlotType != RemovableSlot) && (Private->Slot[Slot].SlotType != EmbeddedSlot)) {
+      DEBUG ((DEBUG_INFO, "SdMmcPciHcDxe doesn't support the slot type [%d]!!!\n", Private->Slot[Slot].SlotType));
+      continue;
+    }
+
+    //
+    // Reset the specified slot of the SD/MMC Pci Host Controller
+    //
+    Status = SdMmcHcReset (Private, Slot);
+    if (EFI_ERROR (Status)) {
+      continue;
+    }
+
+    //
+    // Check whether there is a SD/MMC card attached
+    //
+    if (Private->Slot[Slot].SlotType == RemovableSlot) {
+      Status = SdMmcHcCardDetect (Private->PciIo, Slot, &MediaPresent);
+      if (EFI_ERROR (Status) && (Status != EFI_MEDIA_CHANGED)) {
+        continue;
+      } else if (!MediaPresent) {
+        DEBUG ((
+          DEBUG_INFO,
+          "SdMmcHcCardDetect: No device attached in Slot[%d]!!!\n",
+          Slot
+          ));
+        continue;
+      }
+    }
+
+    Status = SdMmcHcInitHost (Private, Slot);
+    if (EFI_ERROR (Status)) {
+      continue;
+    }
+
+    Private->Slot[Slot].MediaPresent = TRUE;
+    Private->Slot[Slot].Initialized  = TRUE;
+    RoutineNum                       = sizeof (mCardTypeDetectRoutineTableUt) / sizeof (CARD_TYPE_DETECT_ROUTINE);
+    for (Index = 0; Index < RoutineNum; Index++) {
+      Routine = &mCardTypeDetectRoutineTableUt[Index];
+      if (*Routine != NULL) {
+        Status = (*Routine)(Private, Slot);
+        if (!EFI_ERROR (Status)) {
+          DEBUG ((DEBUG_INFO, "Initialized the slot\n"));
+          break;
+        }
+      }
+    }
+
+    //
+    // This card doesn't get initialized correctly.
+    //
+    if (Index == RoutineNum) {
+      Private->Slot[Slot].Initialized = FALSE;
+    }
+  }
+
+  DEBUG ((DEBUG_INFO, "SD card initialized\n"));
+  UT_ASSERT_EQUAL (Status, EFI_SUCCESS);
+
+  SdMmcCreateSingleBlockWritePacket (gTestBlock, 512, &Packet, &CommandBlock, &StatusBlock);
+  Status = Private->PassThru.PassThru (&Private->PassThru, 0, &Packet, NULL);
+
+  UT_ASSERT_EQUAL (Status, EFI_SUCCESS);
+
+  MemoryBlock = AllocateZeroPool (512);
+  SdMmcCreateSingleBlockTransferPacket (MemoryBlock, 512, &Packet, &CommandBlock, &StatusBlock);
+  Status = Private->PassThru.PassThru (&Private->PassThru, 0, &Packet, NULL);
+
+  UT_ASSERT_EQUAL (Status, EFI_SUCCESS);
+
+  UT_ASSERT_MEM_EQUAL (gTestBlock, MemoryBlock, sizeof (gTestBlock));
+
+  qtest_shutdown (qs);
+  return UNIT_TEST_PASSED;
+}
+
 EFI_STATUS
 EFIAPI
 UefiTestMain (
@@ -443,6 +839,7 @@ UefiTestMain (
   EFI_STATUS                  Status;
   UNIT_TEST_FRAMEWORK_HANDLE  Framework;
   UNIT_TEST_SUITE_HANDLE      SdMmcPassThruTest;
+  UNIT_TEST_SUITE_HANDLE      SdMmcPassThruQemuTest;
   TEST_CONTEXT            SdmaTestContext;
   TEST_CONTEXT            PioTestContext;
 
@@ -464,7 +861,7 @@ UefiTestMain (
     return Status;
   }
 
-  Status = CreateUnitTestSuite (&SdMmcPassThruTest, Framework, "SdMmcPassThruTests", "SdMmc.PassThru", NULL, NULL);
+  Status = CreateUnitTestSuite (&SdMmcPassThruTest, Framework, "SdMmcPassThruTestsWithLocalModel", "SdMmc.PassThru", NULL, NULL);
   if (EFI_ERROR (Status)) {
     return Status;
   }
@@ -472,6 +869,13 @@ UefiTestMain (
   AddTestCase (SdMmcPassThruTest, "SingleBlockTestSdma", "SingleBlockTestSdma", SdMmcSignleBlockReadShouldReturnDataBlockFromDevice, NULL, NULL, &SdmaTestContext);
   AddTestCase (SdMmcPassThruTest, "SingleBlockTestPio", "SingleBlockTestPio", SdMmcSignleBlockReadShouldReturnDataBlockFromDevice, NULL, NULL, &PioTestContext);
   AddTestCase (SdMmcPassThruTest, "LedControlTest", "LedControlTest", SdMmcLedShouldBeEnabledForBlockTransfer, NULL, NULL, &SdmaTestContext);
+
+  Status = CreateUnitTestSuite (&SdMmcPassThruQemuTest, Framework, "SdMmcPassThruTestsWithQemuModel", "SdMmmc.PassThru", NULL, NULL);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  AddTestCase (SdMmcPassThruQemuTest, "SingleBlockTestPio", "SingleBlockTestSdma", SdMmcSignleBlockReadShouldReturnDataBlockFromQemuDeviceModel, NULL, NULL, NULL);
 
   Status = RunAllTestSuites (Framework);
 
