@@ -1853,7 +1853,7 @@ SdMmcCreateTrb (
   )
 {
   SD_MMC_HC_TRB  *Trb;
-  EFI_STATUS     Status;
+  //EFI_STATUS     Status;
   EFI_TPL        OldTpl;
 
   Trb = AllocateZeroPool (sizeof (SD_MMC_HC_TRB));
@@ -1902,6 +1902,7 @@ SdMmcCreateTrb (
   } else {
     if (Trb->DataLen == 0) {
       Trb->Mode = SdMmcNoData;
+      /*
     } else if (Private->Capability[Slot].Adma2 != 0) {
       Trb->Mode           = SdMmcAdma32bMode;
       Trb->AdmaLengthMode = SdMmcAdmaLen16b;
@@ -1931,6 +1932,7 @@ SdMmcCreateTrb (
       if (EFI_ERROR (Status)) {
         goto Error;
       }
+      */
     } else {
       Trb->Mode = SdMmcPioMode;
     }
