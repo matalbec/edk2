@@ -111,6 +111,8 @@ MockPciIoWriteMem (
   MOCK_PCI_IO  *PciIo;
   MOCK_PCI_DEVICE  *PciDev;
   UINT32  Size;
+  UINT32  *Uint32Buffer;
+  UINT32  Index;
 
   PciIo = (MOCK_PCI_IO*) This;
   PciDev = PciIo->MockPci;
@@ -124,6 +126,13 @@ MockPciIoWriteMem (
     return EFI_UNSUPPORTED;
   }
 
+  if (Width == EfiPciIoWidthFifoUint32) {
+    Uint32Buffer = (UINT32*) Buffer;
+    for (Index = 0; Index < Count; Index++) {
+      PciDev->Bar[BarIndex]->Write (PciDev->Bar[BarIndex], Offset, 4, Uint32Buffer[Index]);
+    }
+    return EFI_SUCCESS;
+  }
   switch (Width) {
     case EfiPciIoWidthUint8:
       Size = 1;
@@ -182,7 +191,49 @@ MockPciIoConfigRead (
   IN OUT VOID                         *Buffer
   )
 {
-  return EFI_UNSUPPORTED;
+  MOCK_PCI_IO  *PciIo;
+  MOCK_PCI_DEVICE  *PciDev;
+  UINT32  Size;
+  UINT32  *Uint32Buffer;
+  UINT32  Index;
+  UINT64  Val;
+
+  PciIo = (MOCK_PCI_IO*) This;
+  PciDev = PciIo->MockPci;
+
+  if (PciDev->ConfigSpace == NULL) {
+    DEBUG ((DEBUG_INFO, "NULL Bar\n"));
+    return EFI_UNSUPPORTED;
+  }
+
+  if (Width == EfiPciIoWidthFifoUint32) {
+    Uint32Buffer = (UINT32*) Buffer;
+    for (Index = 0; Index < Count; Index++) {
+      PciDev->ConfigSpace->Read (PciDev->ConfigSpace, Offset, 4, &Val);
+      Uint32Buffer[Index] = (UINT32) Val;
+    }
+    return EFI_SUCCESS;
+  }
+
+  switch (Width) {
+    case EfiPciIoWidthUint8:
+      Size = 1;
+      break;
+    case EfiPciIoWidthUint16:
+      Size = 2;
+      break;
+    case EfiPciIoWidthUint32:
+      Size = 4;
+      break;
+    case EfiPciIoWidthUint64:
+      Size = 8;
+      break;
+    default:
+      DEBUG ((DEBUG_INFO, "Unsupported width\n"));
+      return EFI_UNSUPPORTED;
+  }
+
+  return PciDev->ConfigSpace->Read (PciDev->ConfigSpace, Offset, Size, (UINT64*)Buffer);
 }
 
 EFIAPI
@@ -195,7 +246,36 @@ MockPciIoConfigWrite (
   IN OUT VOID                         *Buffer
   )
 {
-  return EFI_UNSUPPORTED;
+  MOCK_PCI_IO  *PciIo;
+  MOCK_PCI_DEVICE  *PciDev;
+  UINT32  Size;
+
+  PciIo = (MOCK_PCI_IO*) This;
+  PciDev = PciIo->MockPci;
+
+  if (PciDev->ConfigSpace == NULL) {
+    DEBUG ((DEBUG_INFO, "NULL Bar\n"));
+    return EFI_UNSUPPORTED;
+  }
+
+  switch (Width) {
+    case EfiPciIoWidthUint8:
+      Size = 1;
+      break;
+    case EfiPciIoWidthUint16:
+      Size = 2;
+      break;
+    case EfiPciIoWidthUint32:
+      Size = 4;
+      break;
+    case EfiPciIoWidthUint64:
+      Size = 8;
+      break;
+    default:
+      return EFI_UNSUPPORTED;
+  }
+
+  return PciDev->ConfigSpace->Write (PciDev->ConfigSpace, Offset, Size, *(UINT64*)Buffer);
 }
 
 EFIAPI
@@ -336,6 +416,8 @@ MockPciIoCreate (
 
   MockPciIo->MockPci = MockPci;
 
+  MockPciIo->PciIo.Pci.Read = MockPciIoConfigRead;
+  MockPciIo->PciIo.Pci.Write = MockPciIoConfigWrite;
   MockPciIo->PciIo.PollMem = MockPciIoPollMem;
   MockPciIo->PciIo.PollIo = MockPciIoPollIo;
   MockPciIo->PciIo.Mem.Read = MockPciIoReadMem;
