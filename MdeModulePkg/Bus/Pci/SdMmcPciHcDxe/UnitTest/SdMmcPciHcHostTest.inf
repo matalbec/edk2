@@ -20,6 +20,7 @@
 
 [Sources]
   SdMmcPciHcHostTest.c
+  HostGbsLib.c
   ../SdMmcPciHcDxe.h
   ../SdMmcPciHcDxe.c
   ../EmmcDevice.c

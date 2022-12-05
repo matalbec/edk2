@@ -376,7 +376,7 @@ MockPciIoProtocolAttributes (
   OUT UINT64                                   *Result OPTIONAL
   )
 {
-  return EFI_UNSUPPORTED;
+  return EFI_SUCCESS;
 }
 
 EFIAPI

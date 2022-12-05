@@ -443,33 +443,6 @@ SdMmcLedShouldBeEnabledForBlockTransfer (
   return UNIT_TEST_PASSED;
 }
 
-EFIAPI
-EFI_STATUS
-SdMmcStall (
-  IN UINTN  Microseconds
-)
-{
-  DEBUG ((DEBUG_INFO, "Called Stall\n"));
-  return EFI_SUCCESS;
-}
-
-EFIAPI
-EFI_TPL
-SdMmcRaiseTpl (
-  IN EFI_TPL      NewTpl
-  )
-{
-  return NewTpl;
-}
-
-EFIAPI
-VOID
-SdMmcRestoreTpl (
-  IN EFI_TPL      OldTpl
-  )
-{
-}
-
 typedef enum {
   QemuPciCfg,
   QemuBar
@@ -670,165 +643,90 @@ SdMmcQemuBuildControllerReadyForPioTransfer (
   return EFI_SUCCESS;
 }
 
-//
-// Prioritized function list to detect card type.
-// User could add other card detection logic here.
-//
-CARD_TYPE_DETECT_ROUTINE  mCardTypeDetectRoutineTableUt[] = {
-  SdCardIdentification,
-  NULL
-};
+extern EFI_DRIVER_BINDING_PROTOCOL  gSdMmcPciHcDriverBinding;
+
+EFI_STATUS
+EFIAPI
+SdMmcPciHcDriverBindingStart (
+  IN EFI_DRIVER_BINDING_PROTOCOL  *This,
+  IN EFI_HANDLE                   Controller,
+  IN EFI_DEVICE_PATH_PROTOCOL     *RemainingDevicePath
+  );
 
 UNIT_TEST_STATUS
 EFIAPI
-SdMmcSignleBlockReadShouldReturnDataBlockFromQemuDeviceModel (
+SdMmcDriverShouldInitializeHostController (
   IN UNIT_TEST_CONTEXT  Context
   )
 {
-  QOSState *qs;
-  SD_MMC_HC_PRIVATE_DATA  *Private;
-  EFI_PCI_IO_PROTOCOL     *PciIo;
+  EFI_STATUS  Status;
+  EFI_SD_MMC_PASS_THRU_PROTOCOL *PassThru;
+
+  Status = SdMmcPciHcDriverBindingStart ((VOID*)&gSdMmcPciHcDriverBinding, *(EFI_HANDLE*)Context, NULL);
+  UT_ASSERT_EQUAL (Status, EFI_SUCCESS);
+
+  Status = gBS->LocateProtocol (&gEfiSdMmcPassThruProtocolGuid, NULL, (VOID*) &PassThru);
+  UT_ASSERT_EQUAL (Status, EFI_SUCCESS);
+
+  return UNIT_TEST_PASSED;
+}
+
+UNIT_TEST_STATUS
+EFIAPI
+SdMmcSingleBlockWriteShouldSucceed (
+  IN UNIT_TEST_CONTEXT  Context
+  )
+{
   EFI_STATUS                Status;
-  UINT8                     SlotNum;
-  UINT8                     FirstBar;
-  UINT8                     Slot;
-  UINT8                     Index;
-  CARD_TYPE_DETECT_ROUTINE  *Routine;
-  UINT32                    RoutineNum;
-  BOOLEAN                   MediaPresent;
   EFI_SD_MMC_PASS_THRU_COMMAND_PACKET  Packet;
   EFI_SD_MMC_COMMAND_BLOCK  CommandBlock;
   EFI_SD_MMC_STATUS_BLOCK   StatusBlock;
+  EFI_SD_MMC_PASS_THRU_PROTOCOL *PassThru;
 
-  const char*  cli = "-M q35 -device sdhci-pci -device sd-card,drive=mydrive -drive id=mydrive,if=none,format=raw,file=/home/matalbec/vm_images/sdcard.img";
-  qs = qtest_pc_boot(cli);
-
-  Private = AllocateCopyPool (sizeof (SD_MMC_HC_PRIVATE_DATA), &gSdMmcPciHcTemplate);
-  if (Private == NULL) {
-     return UNIT_TEST_PASSED;
-  }
-
-  SdMmcQemuBuildControllerReadyForPioTransfer (qs, &PciIo);
-
-  Private->ControllerHandle = NULL;
-  Private->PciIo = PciIo;
-  InitializeListHead (&Private->Queue);
-
-  //
-  // Get SD/MMC Pci Host Controller Slot info
-  //
-  Status = SdMmcHcGetSlotInfo (Private->PciIo, &FirstBar, &SlotNum);
+  Status = gBS->LocateProtocol (&gEfiSdMmcPassThruProtocolGuid, NULL, (VOID*) &PassThru);
   if (EFI_ERROR (Status)) {
-    return UNIT_TEST_PASSED;
+    return UNIT_TEST_ERROR_PREREQUISITE_NOT_MET
   }
-
-  for (Slot = FirstBar; Slot < (FirstBar + SlotNum); Slot++) {
-    Private->Slot[Slot].Enable = TRUE;
-    //
-    // Get SD/MMC Pci Host Controller Version
-    //
-    Status = SdMmcHcGetControllerVersion (Private->PciIo, Slot, &Private->ControllerVersion[Slot]);
-    if (EFI_ERROR (Status)) {
-      continue;
-    }
-
-    Status = SdMmcHcGetCapability (Private->PciIo, Slot, &Private->Capability[Slot]);
-    if (EFI_ERROR (Status)) {
-      continue;
-    }
-
-    Private->BaseClkFreq[Slot] = Private->Capability[Slot].BaseClkFreq;
-
-    DumpCapabilityReg (Slot, &Private->Capability[Slot]);
-    DEBUG ((
-      DEBUG_INFO,
-      "Slot[%d] Base Clock Frequency: %dMHz\n",
-      Slot,
-      Private->BaseClkFreq[Slot]
-      ));
-
-    Status = SdMmcHcGetMaxCurrent (Private->PciIo, Slot, &Private->MaxCurrent[Slot]);
-    if (EFI_ERROR (Status)) {
-      continue;
-    }
-
-    Private->Slot[Slot].SlotType = Private->Capability[Slot].SlotType;
-    if ((Private->Slot[Slot].SlotType != RemovableSlot) && (Private->Slot[Slot].SlotType != EmbeddedSlot)) {
-      DEBUG ((DEBUG_INFO, "SdMmcPciHcDxe doesn't support the slot type [%d]!!!\n", Private->Slot[Slot].SlotType));
-      continue;
-    }
-
-    //
-    // Reset the specified slot of the SD/MMC Pci Host Controller
-    //
-    Status = SdMmcHcReset (Private, Slot);
-    if (EFI_ERROR (Status)) {
-      continue;
-    }
-
-    //
-    // Check whether there is a SD/MMC card attached
-    //
-    if (Private->Slot[Slot].SlotType == RemovableSlot) {
-      Status = SdMmcHcCardDetect (Private->PciIo, Slot, &MediaPresent);
-      if (EFI_ERROR (Status) && (Status != EFI_MEDIA_CHANGED)) {
-        continue;
-      } else if (!MediaPresent) {
-        DEBUG ((
-          DEBUG_INFO,
-          "SdMmcHcCardDetect: No device attached in Slot[%d]!!!\n",
-          Slot
-          ));
-        continue;
-      }
-    }
-
-    Status = SdMmcHcInitHost (Private, Slot);
-    if (EFI_ERROR (Status)) {
-      continue;
-    }
-
-    Private->Slot[Slot].MediaPresent = TRUE;
-    Private->Slot[Slot].Initialized  = TRUE;
-    RoutineNum                       = sizeof (mCardTypeDetectRoutineTableUt) / sizeof (CARD_TYPE_DETECT_ROUTINE);
-    for (Index = 0; Index < RoutineNum; Index++) {
-      Routine = &mCardTypeDetectRoutineTableUt[Index];
-      if (*Routine != NULL) {
-        Status = (*Routine)(Private, Slot);
-        if (!EFI_ERROR (Status)) {
-          DEBUG ((DEBUG_INFO, "Initialized the slot\n"));
-          break;
-        }
-      }
-    }
-
-    //
-    // This card doesn't get initialized correctly.
-    //
-    if (Index == RoutineNum) {
-      Private->Slot[Slot].Initialized = FALSE;
-    }
-  }
-
-  DEBUG ((DEBUG_INFO, "SD card initialized\n"));
-  UT_ASSERT_EQUAL (Status, EFI_SUCCESS);
 
   SdMmcCreateSingleBlockWritePacket (gTestBlock, 512, &Packet, &CommandBlock, &StatusBlock);
-  Status = Private->PassThru.PassThru (&Private->PassThru, 0, &Packet, NULL);
+  Status = PassThru->PassThru (PassThru, 0, &Packet, NULL);
 
   UT_ASSERT_EQUAL (Status, EFI_SUCCESS);
+
+  return UNIT_TEST_PASSED;
+}
+
+UNIT_TEST_STATUS
+EFIAPI
+SdMmcSingleBlockReadShouldReturnDataBlock (
+  IN UNIT_TEST_CONTEXT  Context
+  )
+{
+  EFI_STATUS                Status;
+  EFI_SD_MMC_PASS_THRU_COMMAND_PACKET  Packet;
+  EFI_SD_MMC_COMMAND_BLOCK  CommandBlock;
+  EFI_SD_MMC_STATUS_BLOCK   StatusBlock;
+  EFI_SD_MMC_PASS_THRU_PROTOCOL *PassThru;
+
+  Status = gBS->LocateProtocol (&gEfiSdMmcPassThruProtocolGuid, NULL, (VOID*) &PassThru);
+  if (EFI_ERROR (Status)) {
+    return UNIT_TEST_ERROR_PREREQUISITE_NOT_MET
+  }
 
   MemoryBlock = AllocateZeroPool (512);
   SdMmcCreateSingleBlockTransferPacket (MemoryBlock, 512, &Packet, &CommandBlock, &StatusBlock);
-  Status = Private->PassThru.PassThru (&Private->PassThru, 0, &Packet, NULL);
+  Status = PassThru->PassThru (PassThru, 0, &Packet, NULL);
 
   UT_ASSERT_EQUAL (Status, EFI_SUCCESS);
-
   UT_ASSERT_MEM_EQUAL (gTestBlock, MemoryBlock, sizeof (gTestBlock));
 
-  qtest_shutdown (qs);
   return UNIT_TEST_PASSED;
 }
+
+VOID
+InitializeBootServices (
+  VOID
+  );
 
 EFI_STATUS
 EFIAPI
@@ -843,10 +741,7 @@ UefiTestMain (
   TEST_CONTEXT            SdmaTestContext;
   TEST_CONTEXT            PioTestContext;
 
-  gBS = AllocateZeroPool (sizeof (EFI_BOOT_SERVICES));
-  gBS->Stall = SdMmcStall;
-  gBS->RaiseTPL = SdMmcRaiseTpl;
-  gBS->RestoreTPL = SdMmcRestoreTpl;
+  InitializeBootServices ();
 
   SdMmcBuildControllerReadyForPioTransfer (&PioTestContext.Private, &PioTestContext.ControllerContext);
   SdMmcPrivateDataBuildControllerReadyToTransfer (&SdmaTestContext.Private, &SdmaTestContext.ControllerContext);
@@ -875,9 +770,25 @@ UefiTestMain (
     return Status;
   }
 
-  AddTestCase (SdMmcPassThruQemuTest, "SingleBlockTestPio", "SingleBlockTestSdma", SdMmcSignleBlockReadShouldReturnDataBlockFromQemuDeviceModel, NULL, NULL, NULL);
+  // QEMU tests
+
+  const char*  cli = "-M q35 -device sdhci-pci -device sd-card,drive=mydrive -drive id=mydrive,if=none,format=raw,file=/home/matalbec/vm_images/sdcard.img";
+  QOSState *qs;
+  EFI_HANDLE Controller = NULL;
+  EFI_PCI_IO_PROTOCOL  *PciIo;
+
+  qs = qtest_pc_boot(cli);
+
+  SdMmcQemuBuildControllerReadyForPioTransfer (qs, &PciIo);
+  gBS->InstallProtocolInterface (&Controller, &gEfiPciIoProtocolGuid, EFI_NATIVE_INTERFACE, (VOID*) PciIo);
+
+  AddTestCase (SdMmcPassThruQemuTest, "HostControllerInit", "HostControllerInit", SdMmcDriverShouldInitializeHostController, NULL, NULL, &Controller); // Has to be done first
+  AddTestCase (SdMmcPassThruQemuTest, "BlockIoPio", "Write", SdMmcSingleBlockWriteShouldSucceed, NULL, NULL, NULL); // Has to be done before read test
+  AddTestCase (SdMmcPassThruQemuTest, "BlockIoPio", "Read", SdMmcSingleBlockReadShouldReturnDataBlock, NULL, NULL, NULL);
 
   Status = RunAllTestSuites (Framework);
+
+  qtest_shutdown (qs);
 
   if (Framework) {
     FreeUnitTestFramework (Framework);
