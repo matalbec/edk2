@@ -27,4 +27,5 @@
   MapBasedMockRegisterSpaceLib|UnitTestFrameworkPkg/RegisterMock/Library/MapBasedMockRegisterSpaceLib/MapBasedMockRegisterSpaceLib.inf
 
 [Components]
-  MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/UnitTest/SdMmcPciHcHostTest.inf
+  #MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/UnitTest/SdMmcPciHcHostTest.inf
+  MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/UnitTest/SdMmcPciHostTestVpi.inf
