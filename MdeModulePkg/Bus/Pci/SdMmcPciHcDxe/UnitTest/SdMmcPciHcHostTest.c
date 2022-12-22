@@ -685,7 +685,7 @@ SdMmcSingleBlockWriteShouldSucceed (
 
   Status = gBS->LocateProtocol (&gEfiSdMmcPassThruProtocolGuid, NULL, (VOID*) &PassThru);
   if (EFI_ERROR (Status)) {
-    return UNIT_TEST_ERROR_PREREQUISITE_NOT_MET
+    return UNIT_TEST_ERROR_PREREQUISITE_NOT_MET;
   }
 
   SdMmcCreateSingleBlockWritePacket (gTestBlock, 512, &Packet, &CommandBlock, &StatusBlock);
@@ -710,7 +710,7 @@ SdMmcSingleBlockReadShouldReturnDataBlock (
 
   Status = gBS->LocateProtocol (&gEfiSdMmcPassThruProtocolGuid, NULL, (VOID*) &PassThru);
   if (EFI_ERROR (Status)) {
-    return UNIT_TEST_ERROR_PREREQUISITE_NOT_MET
+    return UNIT_TEST_ERROR_PREREQUISITE_NOT_MET;
   }
 
   MemoryBlock = AllocateZeroPool (512);
