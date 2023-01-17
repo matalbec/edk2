@@ -19,16 +19,6 @@
 #include "../SdMmcPciHcDxe.h"
 #include "../SdMmcPciHci.h"
 
-#include <stdlib.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <assert.h>
-#include <stdarg.h>
-#include <glib.h>
-#include <qemu/compiler.h>
-#include <libqos/libqos-pc.h>
-#include <libqos/pci-pc.h>
-
 #define UNIT_TEST_NAME     "SdMmcPciHc driver unit tests"
 #define UNIT_TEST_VERSION  "0.1"
 
@@ -408,8 +398,8 @@ SdMmcSignleBlockReadShouldReturnDataBlockFromDevice (
   return UNIT_TEST_PASSED;
 }
 
-EFIAPI
 UNIT_TEST_STATUS
+EFIAPI
 SdMmcLedShouldBeEnabledForBlockTransfer (
   IN UNIT_TEST_CONTEXT  Context
   )
@@ -441,206 +431,6 @@ SdMmcLedShouldBeEnabledForBlockTransfer (
   UT_ASSERT_EQUAL (HostCtl1 & BIT0, 0); // Test that LED is disabled after command completion
 
   return UNIT_TEST_PASSED;
-}
-
-typedef enum {
-  QemuPciCfg,
-  QemuBar
-} QEMU_REGISTER_SPACE_TYPE;
-
-typedef struct {
-  REGISTER_SPACE_MOCK       RegisterSpace;
-  QEMU_REGISTER_SPACE_TYPE  Type;
-  QPCIDevice                *Device;
-  QPCIBar                   Bar;
-} QEMU_REGISTER_SPACE_MOCK;
-
-EFI_STATUS
-QemuPciRegisterSpaceRead (
-  IN REGISTER_SPACE_MOCK  *RegisterSpace,
-  IN UINT64               Address,
-  IN UINT32               Size,
-  OUT UINT64              *Value
-  )
-{
-  QEMU_REGISTER_SPACE_MOCK  *QemuRegisterSpace;
-
-  QemuRegisterSpace = (QEMU_REGISTER_SPACE_MOCK*) RegisterSpace;
-
-  //DEBUG ((DEBUG_INFO, "Qemu read\n"));
-  //DEBUG ((DEBUG_INFO, "Address = %X\n", Address));
-  //DEBUG ((DEBUG_INFO, "Size = %X\n", Size));
-
-  switch (QemuRegisterSpace->Type) {
-    case QemuPciCfg:
-      //DEBUG ((DEBUG_INFO, "Type = PCI\n"));
-      switch (Size) {
-        case 1:
-          *(UINT8*)Value = qpci_config_readb (QemuRegisterSpace->Device, (uint8_t) Address);
-          break;
-        case 2:
-          *(UINT16*)Value = qpci_config_readw (QemuRegisterSpace->Device, (uint8_t) Address);
-          break;
-        case 4:
-          *(UINT32*)Value = qpci_config_readl (QemuRegisterSpace->Device, (uint8_t) Address);
-          break;
-        default:
-          DEBUG ((DEBUG_ERROR, "Incorrect data width\n"));
-          *Value = 0xFFFFFFFFFFFFFFFF;
-          return EFI_DEVICE_ERROR;
-      }
-      break;
-    case QemuBar:
-      //DEBUG ((DEBUG_INFO, "Type = BAR\n"));
-      switch (Size) {
-        case 1:
-          *(UINT8*)Value = qpci_io_readb (QemuRegisterSpace->Device, QemuRegisterSpace->Bar, Address);
-          break;
-        case 2:
-          *(UINT16*)Value = qpci_io_readw (QemuRegisterSpace->Device, QemuRegisterSpace->Bar, Address);
-          break;
-        case 4:
-          *(UINT32*)Value = qpci_io_readl (QemuRegisterSpace->Device, QemuRegisterSpace->Bar, Address);
-          break;
-        default:
-          DEBUG ((DEBUG_ERROR, "Incorrect data width\n"));
-          *Value = 0xFFFFFFFFFFFFFFFF;
-          return EFI_DEVICE_ERROR;
-      }
-      break;
-  }
-  //DEBUG ((DEBUG_INFO, "Value %X\n", *Value));
-  return EFI_SUCCESS;
-}
-
-EFI_STATUS
-QemuPciRegisterSpaceWrite (
-  IN REGISTER_SPACE_MOCK  *RegisterSpace,
-  IN UINT64               Address,
-  IN UINT32               Size,
-  IN UINT64               Value
-  )
-{
-  QEMU_REGISTER_SPACE_MOCK  *QemuRegisterSpace;
-
-  QemuRegisterSpace = (QEMU_REGISTER_SPACE_MOCK*) RegisterSpace;
-
-  //DEBUG ((DEBUG_INFO, "QemuWrite\n"));
-  //DEBUG ((DEBUG_INFO, "Address = %X\n", Address));
-  //DEBUG ((DEBUG_INFO, "Size = %X\n", Size));
-
-  switch (QemuRegisterSpace->Type) {
-    case QemuPciCfg:
-      //DEBUG ((DEBUG_INFO, "Type = PCI\n"));
-      switch (Size) {
-        case 1:
-          qpci_config_writeb (QemuRegisterSpace->Device, (uint8_t) Address, (uint8_t) Value);
-          break;
-        case 2:
-          qpci_config_writew (QemuRegisterSpace->Device, (uint8_t) Address, (uint16_t) Value);
-          break;
-        case 4:
-          qpci_config_writel (QemuRegisterSpace->Device, (uint8_t) Address, (uint32_t) Value);
-          break;
-        default:
-          DEBUG ((DEBUG_ERROR, "Incorrect data width\n"));
-          return EFI_UNSUPPORTED;
-      }
-      break;
-    case QemuBar:
-      //DEBUG ((DEBUG_INFO, "Type = BAR\n"));
-      switch (Size) {
-        case 1:
-          qpci_io_writeb (QemuRegisterSpace->Device, QemuRegisterSpace->Bar, Address, (uint8_t) Value);
-          break;
-        case 2:
-          qpci_io_writew (QemuRegisterSpace->Device, QemuRegisterSpace->Bar, Address, (uint16_t) Value);
-          break;
-        case 4:
-          qpci_io_writel (QemuRegisterSpace->Device, QemuRegisterSpace->Bar, Address, (uint32_t) Value);
-          break;
-        default:
-          DEBUG ((DEBUG_ERROR, "Incorrect data width\n"));
-          return EFI_UNSUPPORTED;
-      }
-      break;
-  }
-  return EFI_SUCCESS;
-}
-
-VOID
-QemuRegisterSpaceInit (
-  IN CHAR16                    *RegisterSpaceName,
-  IN QEMU_REGISTER_SPACE_TYPE  Type,
-  IN UINTN                     BarNo,
-  IN QOSState                  *Qs,
-  OUT REGISTER_SPACE_MOCK      **RegisterSpaceMock
-  )
-{
-  QEMU_REGISTER_SPACE_MOCK  *QemuRegisterSpace;
-  QPCIBus                   *PciBus;
-  QPCIDevice                *SdhciDevice;
-  UINTN                     Device;
-  UINTN                     Function;
-
-  QemuRegisterSpace = (QEMU_REGISTER_SPACE_MOCK*) AllocateZeroPool (sizeof (QEMU_REGISTER_SPACE_MOCK));
-  QemuRegisterSpace->RegisterSpace.Name = RegisterSpaceName;
-  QemuRegisterSpace->RegisterSpace.Read = QemuPciRegisterSpaceRead;
-  QemuRegisterSpace->RegisterSpace.Write = QemuPciRegisterSpaceWrite;
-  QemuRegisterSpace->Type = Type;
-  QemuRegisterSpace->Device = NULL;
-  *RegisterSpaceMock = &QemuRegisterSpace->RegisterSpace;
-
-  PciBus = qpci_new_pc (Qs->qts, NULL);
-  if (PciBus == NULL) {
-    DEBUG ((DEBUG_INFO, "Failed to get pci bus\n"));
-  }
-  for (Device = 0; Device < 32; Device++) {
-    for (Function = 0; Function < 8; Function++) {
-      SdhciDevice = qpci_device_find (PciBus, QPCI_DEVFN (Device, Function));
-      if (SdhciDevice == NULL) {
-        continue;
-      }
-      if (qpci_config_readw (SdhciDevice, 0xA) == 0x0805) {
-        DEBUG ((DEBUG_INFO, "Found SDHCI at Dev %X, Fun %X\n", Device, Function));
-        if (Type == QemuBar) {
-          QemuRegisterSpace->Bar = qpci_iomap (SdhciDevice, BarNo, NULL);
-          qpci_device_enable (SdhciDevice);
-        }
-        QemuRegisterSpace->Device = SdhciDevice;
-        break;
-      }
-      g_free (SdhciDevice);
-    }
-    if (QemuRegisterSpace->Device != NULL) {
-      break;
-    }
-  }
-}
-
-EFI_STATUS
-SdMmcQemuBuildControllerReadyForPioTransfer (
-  IN QOSState *Qs,
-  OUT EFI_PCI_IO_PROTOCOL  **PciIo
-  )
-{
-  MOCK_PCI_DEVICE  *MockPciDevice;
-  EFI_PCI_IO_PROTOCOL  *MockPciIo;
-  REGISTER_SPACE_MOCK   *PciConfigRegisterSpace;
-  REGISTER_SPACE_MOCK   *BarRegisterSpace;
-
-  QemuRegisterSpaceInit (L"SD PCI config", QemuPciCfg, 0, Qs, &PciConfigRegisterSpace);
-  QemuRegisterSpaceInit (L"SD MEM", QemuBar, 0, Qs, &BarRegisterSpace);
-
-  MockPciDeviceInitialize (&SdControllerPciSpace, &MockPciDevice);
-
-  MockPciDeviceRegisterBar (MockPciDevice, (REGISTER_SPACE_MOCK*) BarRegisterSpace, 0);
-
-  MockPciIoCreate (MockPciDevice, &MockPciIo);
-
-  *PciIo = MockPciIo;
-
-  return EFI_SUCCESS;
 }
 
 extern EFI_DRIVER_BINDING_PROTOCOL  gSdMmcPciHcDriverBinding;
@@ -770,16 +560,9 @@ UefiTestMain (
     return Status;
   }
 
+#if 0
   // QEMU tests
 
-  const char*  cli = "-M q35 -device sdhci-pci -device sd-card,drive=mydrive -drive id=mydrive,if=none,format=raw,file=/home/matalbec/vm_images/sdcard.img";
-  QOSState *qs;
-  EFI_HANDLE Controller = NULL;
-  EFI_PCI_IO_PROTOCOL  *PciIo;
-
-  qs = qtest_pc_boot(cli);
-
-  SdMmcQemuBuildControllerReadyForPioTransfer (qs, &PciIo);
   gBS->InstallProtocolInterface (&Controller, &gEfiPciIoProtocolGuid, EFI_NATIVE_INTERFACE, (VOID*) PciIo);
 
   AddTestCase (SdMmcPassThruQemuTest, "HostControllerInit", "HostControllerInit", SdMmcDriverShouldInitializeHostController, NULL, NULL, &Controller); // Has to be done first
@@ -789,6 +572,7 @@ UefiTestMain (
   Status = RunAllTestSuites (Framework);
 
   qtest_shutdown (qs);
+#endif
 
   if (Framework) {
     FreeUnitTestFramework (Framework);

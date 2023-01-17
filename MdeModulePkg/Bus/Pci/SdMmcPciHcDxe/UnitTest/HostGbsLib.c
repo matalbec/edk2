@@ -7,8 +7,8 @@
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/BaseMemoryLib.h>
 
-EFIAPI
 EFI_STATUS
+EFIAPI
 Stall (
   IN UINTN  Microseconds
 )
@@ -16,8 +16,8 @@ Stall (
   return EFI_SUCCESS;
 }
 
-EFIAPI
 EFI_TPL
+EFIAPI
 RaiseTpl (
   IN EFI_TPL      NewTpl
   )
@@ -25,8 +25,8 @@ RaiseTpl (
   return NewTpl;
 }
 
-EFIAPI
 VOID
+EFIAPI
 RestoreTpl (
   IN EFI_TPL      OldTpl
   )
@@ -51,8 +51,8 @@ HANDLE_INFO mHandleDatabase[MAX_HANDLES];
 
 UINT32 mFirstFreeHandle = 0;
 
-EFIAPI
 EFI_STATUS
+EFIAPI
 OpenProtocol (
   IN  EFI_HANDLE                Handle,
   IN  EFI_GUID                  *Protocol,
@@ -82,8 +82,8 @@ OpenProtocol (
   return EFI_NOT_FOUND;
 }
 
-EFIAPI
 EFI_STATUS
+EFIAPI
 LocateProtocol (
   IN  EFI_GUID  *Protocol,
   IN  VOID      *Registration  OPTIONAL,
@@ -108,8 +108,8 @@ LocateProtocol (
   return EFI_NOT_FOUND;
 }
 
-EFIAPI
 EFI_STATUS
+EFIAPI
 InstallProtocolInterface (
   IN OUT EFI_HANDLE               *Handle,
   IN     EFI_GUID                 *Protocol,
@@ -146,8 +146,8 @@ InstallProtocolInterface (
   return EFI_SUCCESS;
 }
 
-EFIAPI
 EFI_STATUS
+EFIAPI
 CreateEvent (
   IN  UINT32                       Type,
   IN  EFI_TPL                      NotifyTpl,
@@ -159,8 +159,8 @@ CreateEvent (
     return EFI_SUCCESS;
 }
 
-EFIAPI
 EFI_STATUS
+EFIAPI
 SetTimer (
   IN  EFI_EVENT                Event,
   IN  EFI_TIMER_DELAY          Type,
@@ -170,8 +170,8 @@ SetTimer (
   return EFI_SUCCESS;
 }
 
-EFIAPI
 EFI_STATUS
+EFIAPI
 CloseProtocol (
   IN EFI_HANDLE               Handle,
   IN EFI_GUID                 *Protocol,
@@ -182,8 +182,8 @@ CloseProtocol (
   return EFI_SUCCESS;
 }
 
-EFIAPI
 EFI_STATUS
+EFIAPI
 CloseEvent (
   IN EFI_EVENT                Event
   )
@@ -191,8 +191,8 @@ CloseEvent (
   return EFI_SUCCESS;
 }
 
-EFIAPI
 EFI_STATUS
+EFIAPI
 InstallMultipleProtocolInterface (
   IN OUT EFI_HANDLE           *Handle,
   ...

@@ -5,8 +5,8 @@
 #include <MockPciLib.h>
 
 
-EFIAPI
 EFI_STATUS
+EFIAPI
 MockPciIoPollMem (
   IN EFI_PCI_IO_PROTOCOL           *This,
   IN  EFI_PCI_IO_PROTOCOL_WIDTH    Width,
@@ -21,8 +21,8 @@ MockPciIoPollMem (
   return EFI_UNSUPPORTED;
 }
 
-EFIAPI
 EFI_STATUS
+EFIAPI
 MockPciIoPollIo (
   IN EFI_PCI_IO_PROTOCOL           *This,
   IN  EFI_PCI_IO_PROTOCOL_WIDTH    Width,
@@ -37,8 +37,8 @@ MockPciIoPollIo (
   return EFI_UNSUPPORTED;
 }
 
-EFIAPI
 EFI_STATUS
+EFIAPI
 MockPciIoReadMem (
   IN EFI_PCI_IO_PROTOCOL              *This,
   IN     EFI_PCI_IO_PROTOCOL_WIDTH    Width,
@@ -54,6 +54,8 @@ MockPciIoReadMem (
   UINT32  *Uint32Buffer;
   UINT32  Index;
   UINT64  Val;
+  UINT64  Buf;
+  EFI_STATUS  Status;
 
   PciIo = (MOCK_PCI_IO*) This;
   PciDev = PciIo->MockPci;
@@ -94,11 +96,29 @@ MockPciIoReadMem (
       return EFI_UNSUPPORTED;
   }
 
-  return PciDev->Bar[BarIndex]->Read (PciDev->Bar[BarIndex], Offset, Size, (UINT64*)Buffer);
+  Status = PciDev->Bar[BarIndex]->Read (PciDev->Bar[BarIndex], Offset, Size, &Buf);
+
+  switch (Width) {
+    case EfiPciIoWidthUint16:
+      *(UINT16*)Buffer = (UINT16)Buf;
+      break;
+    case EfiPciIoWidthUint32:
+      *(UINT32*)Buffer = (UINT32)Buf;
+      break;
+    case EfiPciIoWidthUint64:
+      *(UINT64*)Buffer = Buf;
+      break;
+    case EfiPciIoWidthUint8:
+    default:
+      *(UINT8*)Buffer = (UINT8)Buf;
+      break;
+  }
+
+  return Status;
 }
 
-EFIAPI
 EFI_STATUS
+EFIAPI
 MockPciIoWriteMem (
   IN EFI_PCI_IO_PROTOCOL              *This,
   IN     EFI_PCI_IO_PROTOCOL_WIDTH    Width,
@@ -149,12 +169,12 @@ MockPciIoWriteMem (
     default:
       return EFI_UNSUPPORTED;
   }
-
-  return PciDev->Bar[BarIndex]->Write (PciDev->Bar[BarIndex], Offset, Size, *(UINT64*)Buffer);
+  
+  return PciDev->Bar[BarIndex]->Write (PciDev->Bar[BarIndex], Offset, Size, (UINT64)*Buffer);
 }
 
-EFIAPI
 EFI_STATUS
+EFIAPI
 MockPciIoReadIo (
   IN EFI_PCI_IO_PROTOCOL              *This,
   IN     EFI_PCI_IO_PROTOCOL_WIDTH    Width,
@@ -167,8 +187,8 @@ MockPciIoReadIo (
   return EFI_UNSUPPORTED;
 }
 
-EFIAPI
 EFI_STATUS
+EFIAPI
 MockPciIoWriteIo (
   IN EFI_PCI_IO_PROTOCOL              *This,
   IN     EFI_PCI_IO_PROTOCOL_WIDTH    Width,
@@ -181,8 +201,8 @@ MockPciIoWriteIo (
   return EFI_UNSUPPORTED;
 }
 
-EFIAPI
 EFI_STATUS
+EFIAPI
 MockPciIoConfigRead (
   IN EFI_PCI_IO_PROTOCOL              *This,
   IN     EFI_PCI_IO_PROTOCOL_WIDTH    Width,
@@ -197,6 +217,8 @@ MockPciIoConfigRead (
   UINT32  *Uint32Buffer;
   UINT32  Index;
   UINT64  Val;
+  EFI_STATUS Status;
+  UINT64  Buf;
 
   PciIo = (MOCK_PCI_IO*) This;
   PciDev = PciIo->MockPci;
@@ -233,11 +255,29 @@ MockPciIoConfigRead (
       return EFI_UNSUPPORTED;
   }
 
-  return PciDev->ConfigSpace->Read (PciDev->ConfigSpace, Offset, Size, (UINT64*)Buffer);
+  Status = PciDev->ConfigSpace->Read (PciDev->ConfigSpace, Offset, Size, &Buf)
+
+  switch (Width) {
+    case EfiPciIoWidthUint16:
+      *(UINT16*)Buffer = (UINT16)Buf;
+      break;
+    case EfiPciIoWidthUint32:
+      *(UINT32*)Buffer = (UINT32)Buf;
+      break;
+    case EfiPciIoWidthUint64:
+      *(UINT64*)Buffer = Buf;
+      break;
+    case EfiPciIoWidthUint8:
+    default:
+      *(UINT8*)Buffer = (UINT8)Buf;
+      break;
+  }
+
+  return Status;
 }
 
-EFIAPI
 EFI_STATUS
+EFIAPI
 MockPciIoConfigWrite (
   IN EFI_PCI_IO_PROTOCOL              *This,
   IN     EFI_PCI_IO_PROTOCOL_WIDTH    Width,
@@ -275,11 +315,11 @@ MockPciIoConfigWrite (
       return EFI_UNSUPPORTED;
   }
 
-  return PciDev->ConfigSpace->Write (PciDev->ConfigSpace, Offset, Size, *(UINT64*)Buffer);
+  return PciDev->ConfigSpace->Write (PciDev->ConfigSpace, Offset, Size, (UINT64)*Buffer);
 }
 
-EFIAPI
 EFI_STATUS
+EFIAPI
 MockPciIoCopyMem (
   IN EFI_PCI_IO_PROTOCOL              *This,
   IN     EFI_PCI_IO_PROTOCOL_WIDTH    Width,
@@ -293,8 +333,8 @@ MockPciIoCopyMem (
   return EFI_UNSUPPORTED;
 }
 
-EFIAPI
 EFI_STATUS
+EFIAPI
 MockPciIoMap (
   IN EFI_PCI_IO_PROTOCOL                *This,
   IN     EFI_PCI_IO_PROTOCOL_OPERATION  Operation,
@@ -310,8 +350,8 @@ MockPciIoMap (
   return EFI_SUCCESS;
 }
 
-EFIAPI
 EFI_STATUS
+EFIAPI
 MockPciIoUnmap (
   IN EFI_PCI_IO_PROTOCOL           *This,
   IN  VOID                         *Mapping
@@ -320,8 +360,8 @@ MockPciIoUnmap (
   return EFI_UNSUPPORTED;
 }
 
-EFIAPI
 EFI_STATUS
+EFIAPI
 MockPciIoAllocateBuffer (
   IN EFI_PCI_IO_PROTOCOL           *This,
   IN  EFI_ALLOCATE_TYPE            Type,
@@ -334,8 +374,8 @@ MockPciIoAllocateBuffer (
   return EFI_UNSUPPORTED;
 }
 
-EFIAPI
 EFI_STATUS
+EFIAPI
 MockPciIoFreeBuffer (
   IN EFI_PCI_IO_PROTOCOL           *This,
   IN  UINTN                        Pages,
@@ -345,8 +385,8 @@ MockPciIoFreeBuffer (
   return EFI_UNSUPPORTED;
 }
 
-EFIAPI
 EFI_STATUS
+EFIAPI
 MockPciIoFlush (
   IN EFI_PCI_IO_PROTOCOL  *This
   )
@@ -354,8 +394,8 @@ MockPciIoFlush (
   return EFI_UNSUPPORTED;
 }
 
-EFIAPI
 EFI_STATUS
+EFIAPI
 MockPciIoGetLocation (
   IN EFI_PCI_IO_PROTOCOL          *This,
   OUT UINTN                       *SegmentNumber,
@@ -367,8 +407,8 @@ MockPciIoGetLocation (
   return EFI_UNSUPPORTED;
 }
 
-EFIAPI
 EFI_STATUS
+EFIAPI
 MockPciIoProtocolAttributes (
   IN EFI_PCI_IO_PROTOCOL                       *This,
   IN  EFI_PCI_IO_PROTOCOL_ATTRIBUTE_OPERATION  Operation,
@@ -379,8 +419,8 @@ MockPciIoProtocolAttributes (
   return EFI_SUCCESS;
 }
 
-EFIAPI
 EFI_STATUS
+EFIAPI
 MockPciIoGetBarAttributes (
   IN EFI_PCI_IO_PROTOCOL             *This,
   IN  UINT8                          BarIndex,
@@ -391,8 +431,8 @@ MockPciIoGetBarAttributes (
   return EFI_UNSUPPORTED;
 }
 
-EFIAPI
 EFI_STATUS
+EFIAPI
 MockPciIoSetBarAttributes (
   IN EFI_PCI_IO_PROTOCOL              *This,
   IN     UINT64                       Attributes,

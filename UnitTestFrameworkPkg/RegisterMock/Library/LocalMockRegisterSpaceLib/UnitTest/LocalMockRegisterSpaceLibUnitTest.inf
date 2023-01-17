@@ -7,7 +7,7 @@
 
 [Defines]
   INF_VERSION     = 0x00010005
-  BASE_NAME       = TestSdMmcPciHc
+  BASE_NAME       = LocalMockRegisterSpaceTest
   FILE_GUID       = A5487689-9E30-41AD-B773-3650C94BCBE2
   MODULE_TYPE     = HOST_APPLICATION
   VERSION_STRING  = 1.0
@@ -19,15 +19,7 @@
 #
 
 [Sources]
-  SdMmcPciHcHostTest.c
-  HostGbsLib.c
-  ../SdMmcPciHcDxe.h
-  ../SdMmcPciHcDxe.c
-  ../EmmcDevice.c
-  ../SdDevice.c
-  ../SdMmcPciHci.h
-  ../SdMmcPciHci.c
-  ../ComponentName.c
+  LocalMockRegisterSpaceLibUnitTest.c
 
 [Packages]
   MdePkg/MdePkg.dec
@@ -38,17 +30,4 @@
   BaseLib
   DebugLib
   UnitTestLib
-  PcdLib
-  DevicePathLib
-  UefiLib
-  MockPciLib
-  MapBasedMockRegisterSpaceLib
-
-[Protocols]
-  gEdkiiSdMmcOverrideProtocolGuid
-  gEfiDevicePathProtocolGuid
-  gEfiPciIoProtocolGuid
-  gEfiSdMmcPassThruProtocolGuid
-
-[Pcd]
-  gEfiMdeModulePkgTokenSpaceGuid.PcdSdMmcGenericTimeoutValue  ## CONSUMES
+  LocalMockRegisterSpaceLib
