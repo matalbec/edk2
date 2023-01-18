@@ -133,6 +133,7 @@ MockPciIoWriteMem (
   UINT32  Size;
   UINT32  *Uint32Buffer;
   UINT32  Index;
+  UINT64  Buf;
 
   PciIo = (MOCK_PCI_IO*) This;
   PciDev = PciIo->MockPci;
@@ -155,22 +156,26 @@ MockPciIoWriteMem (
   }
   switch (Width) {
     case EfiPciIoWidthUint8:
+      Buf = *(UINT8*)Buffer;
       Size = 1;
       break;
     case EfiPciIoWidthUint16:
+      Buf = *(UINT16*)Buffer;
       Size = 2;
       break;
     case EfiPciIoWidthUint32:
+      Buf = *(UINT32*)Buffer;
       Size = 4;
       break;
     case EfiPciIoWidthUint64:
+      Buf = *(UINT64*)Buffer;
       Size = 8;
       break;
     default:
       return EFI_UNSUPPORTED;
   }
   
-  return PciDev->Bar[BarIndex]->Write (PciDev->Bar[BarIndex], Offset, Size, (UINT64)*Buffer);
+  return PciDev->Bar[BarIndex]->Write (PciDev->Bar[BarIndex], Offset, Size, Buf);
 }
 
 EFI_STATUS
@@ -255,7 +260,7 @@ MockPciIoConfigRead (
       return EFI_UNSUPPORTED;
   }
 
-  Status = PciDev->ConfigSpace->Read (PciDev->ConfigSpace, Offset, Size, &Buf)
+  Status = PciDev->ConfigSpace->Read (PciDev->ConfigSpace, Offset, Size, &Buf);
 
   switch (Width) {
     case EfiPciIoWidthUint16:
@@ -288,6 +293,7 @@ MockPciIoConfigWrite (
 {
   MOCK_PCI_IO  *PciIo;
   MOCK_PCI_DEVICE  *PciDev;
+  UINT64           Buf;
   UINT32  Size;
 
   PciIo = (MOCK_PCI_IO*) This;
@@ -300,22 +306,26 @@ MockPciIoConfigWrite (
 
   switch (Width) {
     case EfiPciIoWidthUint8:
+      Buf = *(UINT8*)Buffer;
       Size = 1;
       break;
     case EfiPciIoWidthUint16:
+      Buf = *(UINT16*)Buffer;
       Size = 2;
       break;
     case EfiPciIoWidthUint32:
+      Buf = *(UINT32*)Buffer;
       Size = 4;
       break;
     case EfiPciIoWidthUint64:
+      Buf = *(UINT64*)Buffer;
       Size = 8;
       break;
     default:
       return EFI_UNSUPPORTED;
   }
 
-  return PciDev->ConfigSpace->Write (PciDev->ConfigSpace, Offset, Size, (UINT64)*Buffer);
+  return PciDev->ConfigSpace->Write (PciDev->ConfigSpace, Offset, Size, Buf);
 }
 
 EFI_STATUS

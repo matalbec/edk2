@@ -24,7 +24,7 @@
   UefiLib|MdePkg/Library/UefiLib/UefiLib.inf
   UefiRuntimeServicesTableLib|MdePkg/Library/UefiRuntimeServicesTableLib/UefiRuntimeServicesTableLib.inf
   MockPciLib|UnitTestFrameworkPkg/RegisterMock/Library/MockPcioLib/MockPciLib.inf
-  MapBasedMockRegisterSpaceLib|UnitTestFrameworkPkg/RegisterMock/Library/MapBasedMockRegisterSpaceLib/MapBasedMockRegisterSpaceLib.inf
+  LocalMockRegisterSpaceLib|UnitTestFrameworkPkg/RegisterMock/Library/LocalMockRegisterSpaceLib/LocalMockRegisterSpaceLib.inf
 
 [Components]
   MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/UnitTest/SdMmcPciHcHostTest.inf

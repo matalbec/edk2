@@ -42,7 +42,7 @@
   DevicePathLib
   UefiLib
   MockPciLib
-  MapBasedMockRegisterSpaceLib
+  LocalMockRegisterSpaceLib
 
 [Protocols]
   gEdkiiSdMmcOverrideProtocolGuid
