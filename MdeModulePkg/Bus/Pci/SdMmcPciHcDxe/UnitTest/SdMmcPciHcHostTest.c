@@ -503,9 +503,6 @@ UefiTestMain (
   EFI_STATUS                  Status;
   UNIT_TEST_FRAMEWORK_HANDLE  Framework;
   UNIT_TEST_SUITE_HANDLE      SdMmcPassThruTest;
-#if 0
-  UNIT_TEST_SUITE_HANDLE      SdMmcPassThruQemuTest;
-#endif
   TEST_CONTEXT            SdmaTestContext;
   TEST_CONTEXT            PioTestContext;
 
@@ -533,24 +530,7 @@ UefiTestMain (
   AddTestCase (SdMmcPassThruTest, "SingleBlockTestPio", "SingleBlockTestPio", SdMmcSignleBlockReadShouldReturnDataBlockFromDevice, NULL, NULL, &PioTestContext);
   AddTestCase (SdMmcPassThruTest, "LedControlTest", "LedControlTest", SdMmcLedShouldBeEnabledForBlockTransfer, NULL, NULL, &SdmaTestContext);
 
-#if 0
-  Status = CreateUnitTestSuite (&SdMmcPassThruQemuTest, Framework, "SdMmcPassThruTestsWithQemuModel", "SdMmmc.PassThru", NULL, NULL);
-  if (EFI_ERROR (Status)) {
-    return Status;
-  }
-  // QEMU tests
-
-  gBS->InstallProtocolInterface (&Controller, &gEfiPciIoProtocolGuid, EFI_NATIVE_INTERFACE, (VOID*) PciIo);
-
-  AddTestCase (SdMmcPassThruQemuTest, "HostControllerInit", "HostControllerInit", SdMmcDriverShouldInitializeHostController, NULL, NULL, &Controller); // Has to be done first
-  AddTestCase (SdMmcPassThruQemuTest, "BlockIoPio", "Write", SdMmcSingleBlockWriteShouldSucceed, NULL, NULL, NULL); // Has to be done before read test
-  AddTestCase (SdMmcPassThruQemuTest, "BlockIoPio", "Read", SdMmcSingleBlockReadShouldReturnDataBlock, NULL, NULL, NULL);
-#endif
   Status = RunAllTestSuites (Framework);
-
-#if 0
-  qtest_shutdown (qs);
-#endif
 
   if (Framework) {
     FreeUnitTestFramework (Framework);

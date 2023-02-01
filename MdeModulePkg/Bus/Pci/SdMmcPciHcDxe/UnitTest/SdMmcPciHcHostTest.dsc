@@ -27,5 +27,6 @@
   LocalMockRegisterSpaceLib|UnitTestFrameworkPkg/RegisterMock/Library/LocalMockRegisterSpaceLib/LocalMockRegisterSpaceLib.inf
 
 [Components]
-  MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/UnitTest/SdMmcPciHcHostTest.inf
+  #MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/UnitTest/SdMmcPciHcHostTest.inf
+  MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/UnitTest/SdMmcPciHcHostTestQemu.inf
   #MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/UnitTest/SdMmcPciHostTestVpi.inf
